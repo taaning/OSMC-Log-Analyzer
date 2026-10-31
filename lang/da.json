@@ -341,7 +341,7 @@
   "Turn on passthrough under Settings → System → Audio to send Dolby and DTS to the receiver unchanged.": "Slå passthrough til under Indstillinger → System → Lyd for at sende Dolby og DTS uændret til receiveren.",
   "Packages are not fully installed: {0}.": "Pakker er ikke færdiginstalleret: {0}.",
   "An update was interrupted. Update again with My OSMC, or run: sudo apt-get update && sudo apt-get dist-upgrade": "En opdatering blev afbrudt. Opdatér igen med My OSMC, eller kør: sudo apt-get update && sudo apt-get dist-upgrade",
-  "{0} kernels are installed.": "{0} kerner er installeret.",
+  "{0} kernels are installed: {1}.": "{0} kerner er installeret: {1}.",
   "Normally only the newest one or two are needed. Old kernels can fill up the boot partition and make updates fail.": "Normalt er kun den nyeste eller de to nyeste nødvendige. Gamle kerner kan fylde boot-partitionen op og få opdateringer til at fejle.",
   "APT history shows {0} run(s) of “apt upgrade”.": "APT-historikken viser {0} kørsel(er) af “apt upgrade”.",
   "OSMC should be updated with My OSMC or “sudo apt-get dist-upgrade”. A plain “upgrade” can leave the system partly updated.": "OSMC bør opdateres med My OSMC eller “sudo apt-get dist-upgrade”. Et almindeligt “upgrade” kan efterlade systemet delvist opdateret.",

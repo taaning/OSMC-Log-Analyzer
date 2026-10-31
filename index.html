@@ -893,8 +893,10 @@ const RULES = [
       hint: T('An update was interrupted. Update again with My OSMC, or run: sudo apt-get update && sudo apt-get dist-upgrade'), ev };
   } },
   { cat: 'updates', check: d => {
-    const ev = find(d, ['OSMC Packages', 'All Other Packages'], /^ii\s+\S*-image-\d/);
-    return ev.count > 2 && { sev: 'warn', text: T('{0} kernels are installed.', ev.count),
+    // kernel packages: OSMC's "<device>-image-<version>-osmc" (e.g. vero564-image-4.9.269-93-osmc) or Debian's
+    // "linux-image-<version>"; other packages with "-image-" in the name (libsdl2-image-2.0-0) are not kernels
+    const ev = find(d, ['OSMC Packages', 'All Other Packages'], /^ii\s+(?:[a-z0-9]+-image-\d[\w.+~-]*-osmc|linux-image-\d[\w.+~-]*)(?::\w+)?\s/);
+    return ev.count > 2 && { sev: 'warn', text: T('{0} kernels are installed: {1}.', ev.count, ev.hits.map(h => h.text.split(/\s+/)[1].replace(/:\w+$/, '')).join(', ')),
       hint: T('Normally only the newest one or two are needed. Old kernels can fill up the boot partition and make updates fail.'), ev };
   } },
   { cat: 'updates', check: d => {

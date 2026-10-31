@@ -341,7 +341,7 @@
   "Turn on passthrough under Settings → System → Audio to send Dolby and DTS to the receiver unchanged.": "Turn on passthrough under Settings → System → Audio to send Dolby and DTS to the receiver unchanged.",
   "Packages are not fully installed: {0}.": "Packages are not fully installed: {0}.",
   "An update was interrupted. Update again with My OSMC, or run: sudo apt-get update && sudo apt-get dist-upgrade": "An update was interrupted. Update again with My OSMC, or run: sudo apt-get update && sudo apt-get dist-upgrade",
-  "{0} kernels are installed.": "{0} kernels are installed.",
+  "{0} kernels are installed: {1}.": "{0} kernels are installed: {1}.",
   "Normally only the newest one or two are needed. Old kernels can fill up the boot partition and make updates fail.": "Normally only the newest one or two are needed. Old kernels can fill up the boot partition and make updates fail.",
   "APT history shows {0} run(s) of “apt upgrade”.": "APT history shows {0} run(s) of “apt upgrade”.",
   "OSMC should be updated with My OSMC or “sudo apt-get dist-upgrade”. A plain “upgrade” can leave the system partly updated.": "OSMC should be updated with My OSMC or “sudo apt-get dist-upgrade”. A plain “upgrade” can leave the system partly updated.",
