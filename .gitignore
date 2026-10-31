@@ -1,0 +1,23 @@
+# Deploy script (contains the address of the private web server)
+deploy.sh
+
+# Local Claude Code configuration (machine-specific paths)
+.claude/
+
+# OSMC log files: they contain private data (IP and MAC addresses, paths, hostnames)
+*.log
+uploadlog.txt
+
+# Windows / macOS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*~
+
+# Temporary files
+*.tmp
