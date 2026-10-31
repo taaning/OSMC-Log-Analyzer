@@ -419,14 +419,15 @@ function parseAudioCap(t) {
 
 // "Kodi Log" / "Kodi Old Log": lines like
 //   2026-10-31 09:30:46.882 T:2971     info <general>: message
-// -> [{ date, time, thread, level, comp, msg, extra }]. Lines without a timestamp (e.g. dumped XML)
-// are continuation lines and are collected in the previous entry's `extra`.
+// -> [{ date, time, thread, level, comp, msg, extra, line }]. Lines without a timestamp (e.g. dumped XML)
+// are continuation lines and are collected in the previous entry's `extra`. `line` is the 0-based line
+// within the section, used to jump to the entry in the Raw sections tab.
 function parseKodiLog(t) {
   const re = /^(\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d\.\d+) T:(\d+)\s+(\w+) <([^>]+)>: ?(.*)$/;
   const entries = []; let last = null;
-  for (const l of t.split('\n')) {
+  for (const [i, l] of t.split('\n').entries()) {
     const m = re.exec(l);
-    if (m) { last = { date: m[1], time: m[2], thread: m[3], level: m[4].toLowerCase(), comp: m[5], msg: m[6], extra: [] }; entries.push(last); }
+    if (m) { last = { date: m[1], time: m[2], thread: m[3], level: m[4].toLowerCase(), comp: m[5], msg: m[6], extra: [], line: i }; entries.push(last); }
     else if (last && l.trim()) last.extra.push(l.trim());
   }
   return entries;
@@ -495,8 +496,8 @@ function analyzeKodi(entries) {
       // memory addresses differ between otherwise identical messages, so they are ignored for grouping
       const key = e.level + '|' + msg.replace(/0x[0-9a-f]+/gi, '0x…');
       let g = a.groups.get(key);
-      if (!g) { g = { level: e.level, msg, count: 0, first: e.time.slice(0, 8), last: '' }; a.groups.set(key, g); }
-      g.count++; g.last = e.time.slice(0, 8);
+      if (!g) { g = { level: e.level, msg, count: 0, first: e.time.slice(0, 8), last: '', firstLine: e.line }; a.groups.set(key, g); }
+      g.count++; g.last = e.time.slice(0, 8); g.lastLine = e.line;
       lastByThread[e.thread] = g;
     }
   }
@@ -758,7 +759,6 @@ function render(log, fileName, fileSize) {
   ].filter(x => x[1]).map(([l, v]) => `<div class="stat"><div class="l">${esc(l)}</div><div class="v">${esc(v)}</div></div>`).join('') + '</div>';
   html += card(T('Observations'), obs.length ? '<ul class="obs">' + obs.map(([c, t]) => `<li class="${c}">${esc(t)}</li>`).join('') + '</ul>' : `<p class="empty">${T('Nothing notable found.')}</p>`,
     T('automatic checks, not a guarantee'));
-  html += bannedCard(bannedMatches, allAddons.size);
   html += '<div class="grid">';
   html += card(T('System'), kv([
     [T('Log created'), log.created], [T('Device'), device], [T('Chip (SoC)'), soc], [T('OSMC version'), osmcVer], [T('Kernel'), uname.kernel], [T('Architecture'), uname.arch],
@@ -803,6 +803,7 @@ function render(log, fileName, fileSize) {
     ];
   }), { cols: ['16%', '22%', '23%', '17%', '13%', '9%'] }) + `<p class="muted" style="margin:8px 0 0"><a href="#" data-goto="kodilog">${esc(T('See details under Kodi log →'))}</a></p>`
     : `<p class="empty">${T('No playbacks in the log.')}</p>`, esc(T('{0} total, newest first', pbs.length)));
+  html += bannedCard(bannedMatches, allAddons.size);
   addTab('overview', T('Overview'), html);
 
   // --- Kodi settings tab ---
@@ -951,10 +952,13 @@ function render(log, fileName, fileSize) {
   tabsEl.onclick = e => { const b = e.target.closest('button'); if (b) { show(b.dataset.tab); window.scrollTo(0, 0); } };
   // One click handler for all panels (event delegation), so it survives re-rendering:
   //   data-goto="<tab id>"           link that switches tab (e.g. "See details under Kodi log")
+  //   data-sec="<section>" data-line="<n>"   link to line n of a section in the Raw sections tab
   //   data-action="refresh-banned"   the "Update from kodi.wiki" button
   panelsEl.onclick = async e => {
     const a = e.target.closest('[data-goto]');
     if (a) { e.preventDefault(); show(a.dataset.goto); window.scrollTo(0, 0); return; }
+    const ln = e.target.closest('[data-line]');
+    if (ln) { e.preventDefault(); gotoLine(ln.dataset.sec, +ln.dataset.line); return; }
     const btn = e.target.closest('[data-action="refresh-banned"]');
     if (btn) {
       btn.disabled = true; btn.textContent = T('Fetching…');
@@ -1023,8 +1027,11 @@ function render(log, fileName, fileSize) {
       [T('Hostname'), k.info.hostname], [T('GUI'), k.info.guiFormat], [T('Debug logging'), yesNo(k.debugLogging)],
       [T('Log levels'), raw(Object.entries(k.levels).map(([l, n]) => badge(`${l}: ${n}`, l === 'error' ? 'bad' : l === 'warning' ? 'warn' : '')).join(' '))]]));
     const grp = [...k.groups.values()].sort((a, b) => b.count - a.count);
-    h += card(T('Errors and warnings'), table([T('Level'), T('Count'), T('First'), T('Last'), T('Message')], grp.map(g => [raw(badge(g.level, g.level === 'warning' ? 'warn' : 'bad')), g.count, g.first, g.last, raw(`<span class="mono">${esc(g.msg)}</span>`)]), { scroll: true }),
-      esc(T('grouped, incl. “Skipped N duplicate messages”')));
+    // first/last time and the message link to that line in Raw sections
+    const lineLink = (n, html) => `<a href="#" class="plain" data-sec="${esc(name)}" data-line="${n}" title="${esc(T('Show in Raw sections'))}">${html}</a>`;
+    h += card(T('Errors and warnings'), table([T('Level'), T('Count'), T('First'), T('Last'), T('Message')], grp.map(g => [raw(badge(g.level, g.level === 'warning' ? 'warn' : 'bad')), g.count,
+      raw(lineLink(g.firstLine, esc(g.first))), raw(lineLink(g.lastLine, esc(g.last))), raw(lineLink(g.firstLine, `<span class="mono">${esc(g.msg)}</span>`))]), { scroll: true }),
+      esc(T('grouped, incl. “Skipped N duplicate messages” · click to show in Raw sections')));
     h += card(T('Playbacks'), k.playbacks.length ? k.playbacks.map(p => {
       const title = p.file || decodeURIComponent(p.url.split('?')[0]);
       return `<div class="pb"><div class="t">${esc(title.split('/').pop() || title)}</div>
@@ -1062,6 +1069,26 @@ function render(log, fileName, fileSize) {
     if (re) t = t.replace(re, m => `<mark>${m}</mark>`);
     return `<div${lv ? ` class="lv-${lv[1]}"` : ''}><span class="ln">${n}</span>${t}</div>`;
   };
+  // draws the lines of a collapsed section the first time it is opened
+  const fillRaw = det => {
+    const body = det.querySelector('.body');
+    if (body.innerHTML) return;
+    const s = log.sections[det.dataset.i];
+    body.innerHTML = `<div class="lines">${s.lines.map((l, j) => lineHtml(l, s.startLine + j)).join('')}</div>`;
+  };
+  // Shows line j (0-based) of a section in the Raw sections tab: clears any search, opens the section,
+  // highlights the line and scrolls it into view. Used by the links in the Kodi log tab.
+  const gotoLine = (name, j) => {
+    clearTimeout(rawT);
+    if (rawQ.value) { rawQ.value = ''; renderRaw(); }
+    show('raw');
+    const det = rawOut.querySelector(`details[data-i="${log.sections.indexOf(log.byName[name])}"]`);
+    if (!det) return;
+    det.open = true; fillRaw(det);
+    rawOut.querySelector('.lines .target')?.classList.remove('target');
+    const el = det.querySelector('.lines').children[j];
+    if (el) { el.classList.add('target'); el.scrollIntoView({ block: 'center' }); }
+  };
   const renderRaw = () => {
     const q = rawQ.value.trim();
     if (q.length < 2) {
@@ -1069,13 +1096,7 @@ function render(log, fileName, fileSize) {
       rawOut.innerHTML = sortedSections().map(({ s, i }) => `<details data-i="${i}"><summary><span class="name">${esc(s.name)}</span>
         ${badge(T('{0} lines', s.lines.length))}${s.truncated ? badge(T('truncated'), 'warn') : ''}${/^An error occurred while grabbing/m.test(s.text) ? badge(T('collection error'), 'warn') : ''}
         ${!s.text.trim() ? badge(T('empty')) : ''}</summary><div class="body"></div></details>`).join('');
-      rawOut.querySelectorAll('details').forEach(det => det.addEventListener('toggle', () => {
-        const body = det.querySelector('.body');
-        if (det.open && !body.innerHTML) {
-          const s = log.sections[det.dataset.i];
-          body.innerHTML = `<div class="lines">${s.lines.map((l, j) => lineHtml(l, s.startLine + j)).join('')}</div>`;
-        }
-      }));
+      rawOut.querySelectorAll('details').forEach(det => det.addEventListener('toggle', () => { if (det.open) fillRaw(det); }));
       return;
     }
     // the search text is matched literally; reEsc is the same search for the HTML-escaped line used for highlighting

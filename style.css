@@ -95,9 +95,14 @@ details > .body { padding: 0 12px 12px; }
 .lines .ln { color: var(--muted); display: inline-block; min-width: 5.5em; user-select: none; }
 .lines .lv-error { color: var(--bad); }
 .lines .lv-warning { color: var(--warn); }
+/* line jumped to from the Kodi log tab */
+.lines .target { background: var(--mark); box-shadow: inset 3px 0 var(--accent); }
 mark { background: var(--mark); color: inherit; border-radius: 2px; }
 .muted { color: var(--muted); }
 a { color: var(--accent); }
+/* clickable text that should look like the surrounding text (e.g. Kodi log errors -> Raw sections) */
+a.plain { color: inherit; text-decoration: none; }
+a.plain:hover { text-decoration: underline; text-decoration-color: var(--muted); }
 .changed td:first-child { border-left: 3px solid var(--accent); }
 h4 { margin: 14px 0 6px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
 .empty { color: var(--muted); font-style: italic; }
