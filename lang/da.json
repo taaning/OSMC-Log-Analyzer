@@ -43,6 +43,7 @@
   "Architecture": "Arkitektur",
   "Debian": "Debian",
   "OSMC build": "OSMC-build",
+  "Chip (SoC)": "Chip (SoC)",
   "RAM type": "RAM-type",
   "CPU cores": "CPU-kerner",
   "Version": "Version",

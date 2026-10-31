@@ -364,6 +364,19 @@ function parseAptHistory(t) {
     };
   }).filter(Boolean).sort((a, b) => b.start.localeCompare(a.start));
 }
+// Raspberry Pi model ("Raspberry Pi 400 Rev 1.1", from the kernel's "Machine model:" line) -> SoC.
+// Kodi's "Running on" line can't be used: the Pi kernel reports "BCM2835" in /proc/cpuinfo on every model.
+function piSoc(model) {
+  const m = model.replace(/^Raspberry Pi\s*/, '');
+  if (/^(5|500|Compute Module 5)\b/.test(m)) return 'Broadcom BCM2712';
+  if (/^(4|400|Compute Module 4)/.test(m)) return 'Broadcom BCM2711';
+  if (/^Zero 2/.test(m)) return 'RP3A0 (Broadcom BCM2710A1)';
+  if (/^3 Model [AB] Plus|^Compute Module 3 Plus/.test(m)) return 'Broadcom BCM2837B0';
+  if (/^(3|Compute Module 3)\b|^2 Model B Rev 1\.2/.test(m)) return 'Broadcom BCM2837';
+  if (/^2\b/.test(m)) return 'Broadcom BCM2836';
+  if (/^(Model|Zero|Compute Module\b(?! \d))/.test(m)) return 'Broadcom BCM2835';
+  return '';
+}
 // HDMI/CTA-861 Video Identification Codes -> readable mode ("Display Mode" shows e.g. "VIC:16").
 const VIC = {
   1: '640x480p60', 2: '480p60', 3: '480p60', 4: '720p60', 5: '1080i60', 16: '1080p60', 17: '576p50', 18: '576p50',
@@ -722,9 +735,12 @@ function render(log, fileName, fileSize) {
     bannedMatches,
   };
   // device name and OSMC version come from the Kodi log ("Running on OSMC Vero V with Open Source Media Center 2026.05-2");
-  // without a Kodi log the device is guessed from osmcdev= on the kernel command line
+  // without a Kodi log the device is guessed from osmcdev= on the kernel command line.
+  // On a Raspberry Pi, Kodi just says "BCM2835", so the kernel's "Machine model:" line is used instead.
   const run = kodi && kodi.info.runningOn ? /^(?:OSMC )?(.+?) with Open Source Media Center ([^\s,]+)/.exec(kodi.info.runningOn) : null;
-  const device = run ? run[1] : ({ vero5: 'Vero V', vero3: 'Vero 4K / 4K+', vero2: 'Vero 2', rbp4: 'Raspberry Pi 4', rbp2: 'Raspberry Pi 2/3', rbp1: 'Raspberry Pi 1/Zero' }[cmd.osmcdev] || cmd.osmcdev);
+  const piModel = (/Machine model: (Raspberry Pi.*)/.exec(S('Kernel Message Log') + '\n' + S('System Journal')) || [])[1]?.trim();
+  const soc = piModel ? piSoc(piModel) : '';
+  const device = piModel || (run ? run[1] : ({ vero5: 'Vero V', vero3: 'Vero 4K / 4K+', vero2: 'Vero 2', rbp4: 'Raspberry Pi 4', rbp2: 'Raspberry Pi 2/3', rbp1: 'Raspberry Pi 1/Zero' }[cmd.osmcdev] || cmd.osmcdev));
   const osmcVer = run ? run[2] : '';
   const vic = (/VIC:(\d+)/.exec(S('Display Mode')) || [])[1];
   const root = d.df.find(x => x.mnt === '/');
@@ -745,7 +761,7 @@ function render(log, fileName, fileSize) {
   html += bannedCard(bannedMatches, allAddons.size);
   html += '<div class="grid">';
   html += card(T('System'), kv([
-    [T('Log created'), log.created], [T('Device'), device], [T('OSMC version'), osmcVer], [T('Kernel'), uname.kernel], [T('Architecture'), uname.arch],
+    [T('Log created'), log.created], [T('Device'), device], [T('Chip (SoC)'), soc], [T('OSMC version'), osmcVer], [T('Kernel'), uname.kernel], [T('Architecture'), uname.arch],
     [T('Debian'), S('Debian version').trim()], [T('OSMC build'), S('OSMC Build Information').trim()],
     [T('RAM type'), cmd['osmcdev.ddr_type']], [T('CPU cores'), kodi && kodi.info.cores],
   ]));
