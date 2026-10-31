@@ -21,7 +21,7 @@
     splitting       parseLog() cuts the log file into its named sections
     parsers         one parse function per section type (uname, guisettings, df, EDID, Kodi log …)
     banned add-ons  loads/updates the kodi.wiki list and matches installed add-ons against it
-    observations    automatic checks shown at the top of the overview
+    problems        rule-based checks (RULES) shown in the Problems tab and the overview
     rendering       render() builds every tab as HTML and wires up the interactive parts
     language        DA/EN switch
     loading         file picker / drag & drop -> load() -> render()
@@ -31,7 +31,8 @@
                             lang/en.json and lang/da.json (a missing key just shows the English text)
     read a new log section  use log.sec('Section name') inside render(); the name is the one between
                             the ===== markers in the log
-    add an observation      push ['warn' | 'info' | 'bad' | 'ok', T('text')] in observations()
+    add a check             add a rule to RULES (see the comment above it); its findings show up in the
+                            Problems tab and the overview
     add a tab               build an HTML string in render() and call addTab(id, T('label'), html)
 -->
 <html lang="en">
@@ -652,50 +653,318 @@ function bannedCard(matches, total) {
 // ISO date -> local date and time in the current language.
 const fmtDate = s => s ? new Date(s).toLocaleString(lang === 'da' ? 'da-DK' : 'en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : '';
 
-// ---------- observations ----------
-// Automatic checks shown at the top of the overview. d is the data object built in render().
-// Returns [[level, text], …] where level is 'bad' (red), 'warn' (amber), 'info' (blue) or 'ok' (green).
-// Banned add-ons are put first because they matter most when asking for support.
-function observations(d) {
-  const o = [];
-  // abridged settings by their English name, e.g. ab['Allow passthrough'] === 'false'
-  const ab = Object.fromEntries(d.abridged.map(s => [s.name, s.value]));
-  // audio formats the TV/receiver reports
-  const capTxt = d.audioCap.map(r => r[0]).join(' ');
-  const hasAC3 = /AC-?3/i.test(capTxt), hasDDP = /Digital\+|E-?AC-?3|ATMOS/i.test(capTxt), hasMAT = /MAT|TrueHD/i.test(capTxt), hasDTS = /DTS/i.test(capTxt);
-  if (ab['Allow passthrough'] === 'false' && (hasAC3 || hasDDP || hasMAT || hasDTS))
-    o.push(['warn', T('Passthrough is disabled, but the connected device reports support for: {0}.', d.audioCap.map(r => r[0]).filter(f => !/^PCM/i.test(f)).join(', '))]);
-  if (ab['Allow passthrough'] === 'true') {
-    const miss = [];
-    if (hasDDP && ab['Dolby Digital Plus (E-AC3) capable receiver'] === 'false') miss.push('Dolby Digital Plus (E-AC3)');
-    if (hasMAT && ab['TrueHD capable receiver'] === 'false') miss.push('TrueHD (MAT)');
-    if (hasDTS && ab['DTS capable receiver'] === 'false') miss.push('DTS');
-    if (miss.length) o.push(['info', T('Passthrough is enabled, but these formats reported by the device are not enabled in Kodi: {0}.', miss.join(', '))]);
+// ---------- problems ----------
+// Rule-based checks. The results are shown in the Problems tab, with advice and the log lines that triggered
+// them, and as a short list in the overview's Observations card. Every rule has a category, and categories
+// can be switched off in the Problems tab (remembered in this browser).
+//
+// A rule is { cat, check(d) }: check gets the data object built in render() and returns a finding, an array
+// of findings (false/undefined entries are skipped) or nothing. A finding is { sev, text, hint, ev }:
+//   sev   'bad' (red), 'warn' (amber), 'info' (blue) or 'ok' (green)
+//   text  what was found          hint  what to do about it (optional)
+//   ev    evidence from find(): { hits: [{ sec, line, n, text }], count } (optional)
+// Many patterns are problems that OSMC forum helpers often point out in users' logs.
+// To add a check: add a rule to RULES and its texts to lang/en.json and lang/da.json.
+
+// problem categories in display order: id -> English label
+const CATS = {
+  addons: 'Add-ons', shares: 'Network shares', network: 'Network', crashes: 'Crashes & errors', storage: 'Storage & memory',
+  hardware: 'Hardware & power', display: 'Display', audio: 'Audio', updates: 'Updates & packages', database: 'Database', log: 'About the log',
+};
+const SEV_ORDER = { bad: 0, warn: 1, info: 2, ok: 3 };
+const reEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// Kodi log sections, and the section with kernel/system messages (the journal includes the kernel's messages,
+// so the kernel log is only used when there is no journal)
+const KODI = ['Kodi Log', 'Kodi Old Log'];
+const sysSec = d => d.log.sec('System Journal').trim() ? 'System Journal' : 'Kernel Message Log';
+// matches Kodi log lines logged at error level (or worse) whose message matches re
+const kodiErr = re => new RegExp(String.raw`\s(?:error|fatal) <[^>]+>: .*(?:` + re.source + ')', re.flags);
+
+// Finds the lines of one or more sections that match test (a regex without the g flag, or a function)
+// -> { hits (at most max), count }. line is the 0-based line within the section (for jumping to Raw sections),
+// n the line number in the file. Missing sections are skipped.
+function find(d, secs, test, max = 50) {
+  const ok = typeof test === 'function' ? test : l => test.test(l);
+  const ev = { hits: [], count: 0 };
+  for (const name of [].concat(secs)) {
+    const s = d.log.byName[name];
+    if (!s) continue;
+    s.lines.forEach((l, j) => {
+      if (!ok(l)) return;
+      ev.count++;
+      if (ev.hits.length < max) ev.hits.push({ sec: name, line: j, n: s.startLine + j, text: l });
+    });
   }
-  const maxCh = Math.max(0, ...d.audioCap.map(r => parseInt(r[1]) || 0));
-  if (ab['Number of channels'] && parseFloat(ab['Number of channels']) <= 2 && maxCh > 2)
-    o.push(['info', T('Number of channels is set to {0}, but the device reports up to {1} channels.', ab['Number of channels'], maxCh)]);
-  if (ab['Adjust display refresh rate'] && /^Off/i.test(ab['Adjust display refresh rate']))
-    o.push(['warn', T('Adjust display refresh rate is off. Films at 23.976/24 fps may stutter.')]);
-  if (d.kodi && d.kodi.debugLogging) o.push(['info', T('Debug logging is enabled in Kodi. Fine for troubleshooting, but produces large log files.')]);
-  for (const df of d.df) if (df.pct >= 85 && !/^(tmpfs|devtmpfs)$/.test(df.fs)) o.push([df.pct >= 95 ? 'bad' : 'warn', T('{0} is {1}% full ({2} free).', df.mnt, df.pct, df.avail)]);
-  if (d.mem.Mem && d.mem.Mem.avail / d.mem.Mem.total < 0.1) o.push(['warn', T('Low available memory: {0} MB of {1} MB.', d.mem.Mem.avail, d.mem.Mem.total)]);
-  for (const i of d.ifaces) if ((+i.rxErr || 0) + (+i.txErr || 0) > 0) o.push(['warn', T('Network errors on {0}: RX {1}, TX {2}.', i.name, i.rxErr, i.txErr)]);
-  if (d.kodi) {
-    const top = [...d.kodi.groups.values()].filter(g => g.level === 'error').sort((a, b) => b.count - a.count)[0];
-    if (top && top.count >= 50) o.push(['warn', T('The Kodi log has {0} repeats of the error: “{1}”.', top.count, top.msg.slice(0, 160))]);
-    if (d.kodi.repoErrors.size) o.push(['warn', T('Outdated or broken repositories: {0}.', [...d.kodi.repoErrors].join(', '))]);
-    const dvPb = d.kodi.playbacks.filter(p => p.dovi);
-    if (dvPb.length) o.push(['ok', T('{0} playback(s) with Dolby Vision in the Kodi log.', dvPb.length)]);
+  return ev;
+}
+// finding from a find() result: nothing if no lines matched; text/hint get the number of matches as {0}
+const found = (sev, ev, text, hint) => ev.count ? { sev, text: T(text, ev.count), hint: hint && T(hint), ev } : null;
+
+// Kodi's view modes (defaultvideosettings/viewmode)
+const VIEWMODES = ['Normal', 'Zoom', 'Stretch 4:3', 'Wide zoom', 'Stretch 16:9', 'Original size', 'Custom', 'Stretch 16:9 (non-linear)', 'Zoom 120% width', 'Zoom 110% width'];
+
+const RULES = [
+  // --- add-ons ---
+  { cat: 'addons', check: d => {
+    const ev = list => find(d, KODI, new RegExp(`CAddonMgr::FindAddons: (?:${list.map(m => reEsc(m.id)).join('|')}) v`));
+    const ids = d.bannedMatches.filter(m => m.how === 'id'), names = d.bannedMatches.filter(m => m.how === 'name');
+    return [
+      ids.length && { sev: 'bad', text: T('Banned add-ons installed: {0}.', ids.map(m => m.id).join(', ')),
+        hint: T('No support is given on the Kodi and OSMC forums while they are installed. Remove them and make a new log.'), ev: ev(ids) },
+      names.length && { sev: 'warn', text: T('Possibly banned add-ons (name matches the list): {0}.', names.map(m => m.id).join(', ')), ev: ev(names) },
+    ];
+  } },
+  { cat: 'addons', check: d => d.kodi && d.kodi.repoErrors.size && { sev: 'warn', text: T('Outdated or broken repositories: {0}.', [...d.kodi.repoErrors].join(', ')),
+    hint: T('Kodi could not update from these repositories. Remove repositories that are no longer maintained.'), ev: find(d, 'Kodi Log', kodiErr(/Repository add-on \S+ /)) } },
+  { cat: 'addons', check: d => {
+    // Kodi logs a Python error as "EXCEPTION Thrown …" followed by the traceback; the add-on is named by a file path in it
+    let ev = find(d, KODI, /EXCEPTION Thrown/);
+    if (!ev.count) ev = find(d, KODI, /Traceback \(most recent call last\)/);
+    if (!ev.count) return;
+    const ids = new Set();
+    for (const h of ev.hits) {
+      const lines = d.log.byName[h.sec].lines;
+      for (let j = h.line; j < Math.min(lines.length, h.line + 40); j++) {
+        const m = /addons\/((?:plugin|script|service|skin|context|metadata|resource|repository|weather|screensaver)\.[\w.-]+)\//.exec(lines[j]);
+        if (m) { ids.add(m[1]); break; }
+      }
+    }
+    return { sev: 'warn', text: ids.size ? T('Python errors in add-ons ({0}×): {1}.', ev.count, [...ids].join(', ')) : T('Python errors in add-ons ({0}×).', ev.count),
+      hint: T('Update the add-on or ask its author for help. Errors in third-party add-ons are not OSMC problems.'), ev };
+  } },
+
+  // --- network shares ---
+  { cat: 'shares', check: d => {
+    const ev = find(d, KODI, kodiErr(/SMBDirectory.*Unable to open directory|CSMBFile::\w+.*(?:error|failed)|SMB: .*(?:error|failed)/i));
+    if (!ev.count) return;
+    // the reason is quoted at the end of the line, e.g. error : 'Permission denied'
+    const why = [...new Set(ev.hits.map(h => (/error\s*:\s*'([^']+)'/i.exec(h.text) || [])[1]).filter(Boolean))];
+    return { sev: 'bad', text: why.length ? T('Kodi could not open SMB (Windows) shares ({0}×): {1}.', ev.count, why.join('; ')) : T('Kodi could not open SMB (Windows) shares ({0}×).', ev.count),
+      hint: T('Check the share path, user name and password. Newer NAS and Windows servers need SMB2 or SMB3: check the minimum and maximum protocol under Settings → Services → SMB client.'), ev };
+  } },
+  { cat: 'shares', check: d => found('bad', find(d, KODI, kodiErr(/\bNFS\b|nfs:\/\//i)), 'Kodi could not use NFS shares ({0}×).',
+    'Check that the server is running, that the export path is right and that the export allows the IP address of this device.') },
+  { cat: 'shares', check: d => found('warn', find(d, sysSec(d), /mount error\(\d+\)|failed to parse mount options|CIFS:? VFS: .*(?:error|fail)|Failed to mount|mount\.(?:nfs4?|cifs): |nfs: server \S+ not responding|autofs.*(?:error|fail)/i),
+    'Errors when mounting file systems ({0}×).', 'Check the mounts in fstab and autofs (see Sources & storage), and that the server is on before this device starts.') },
+
+  // --- network ---
+  { cat: 'network', check: d => found('warn', find(d, KODI, l => kodiErr(/Software caused connection abort|Connection reset by peer|Connection timed out|Operation timed out|Network is unreachable|No route to host/i).test(l) && !/SMB|NFS/i.test(l)),
+    'Network connection errors in the Kodi log ({0}×).', 'The connection to a server was lost, often during playback. Check cables, the Wi-Fi signal and the server. A wired connection is more reliable.') },
+  { cat: 'network', check: d => found('warn', find(d, [...KODI, sysSec(d)], /Could(?:n't| not) resolve|Name or service not known|Temporary failure in name resolution/i),
+    'Name lookup (DNS) errors ({0}×).', 'Server names or internet addresses could not be looked up. Check the DNS server in the network settings, or use IP addresses for shares.') },
+  { cat: 'network', check: d => {
+    const wl = d.ifaces.find(i => i.inet && /^wl/.test(i.name));
+    if (wl && !d.ifaces.some(i => i.inet && /^(eth|en)/.test(i.name)))
+      return { sev: 'info', text: T('Connected via Wi-Fi ({0}).', wl.name), hint: T('For high-bitrate video (4K, Blu-ray remuxes) a wired connection is more reliable.') };
+  } },
+  { cat: 'network', check: d => d.ifaces.filter(i => (+i.rxErr || 0) + (+i.txErr || 0) > 0).map(i => ({ sev: 'warn',
+    text: T('Network errors on {0}: RX {1}, TX {2}.', i.name, i.rxErr, i.txErr), hint: T('Errors on a network interface often mean a bad cable, port or Wi-Fi signal.') })) },
+
+  // --- crashes & errors ---
+  { cat: 'crashes', check: d => found('bad', find(d, sysSec(d), /segfault at|status=(?:11\/SEGV|7\/BUS|6\/ABRT)|SIGSEGV|SIGBUS|core dumped|code=dumped/i),
+    'Signs of a program crash ({0}×).', 'If it is Kodi (kodi.bin), a recently installed add-on or skin is a common cause. Crashes during updates can point to a weak power supply or a failing SD card.') },
+  { cat: 'crashes', check: d => {
+    const top = d.kodi && [...d.kodi.groups.values()].filter(g => g.level === 'error').sort((a, b) => b.count - a.count)[0];
+    if (!top || top.count < 50) return;
+    const s = d.log.byName['Kodi Log'];
+    return { sev: 'warn', text: T('The Kodi log has {0} repeats of the error: “{1}”.', top.count, top.msg.slice(0, 160)),
+      hint: T('An error that repeats this often can slow Kodi down and fills the log. It usually points to an add-on, a source or a setting.'),
+      ev: { hits: [{ sec: 'Kodi Log', line: top.firstLine, n: s.startLine + top.firstLine, text: s.lines[top.firstLine] }], count: 1 } };
+  } },
+
+  // --- storage & memory ---
+  { cat: 'storage', check: d => d.df.filter(df => df.pct >= 85 && !/^(tmpfs|devtmpfs)$/.test(df.fs)).map(df => ({ sev: df.pct >= 95 ? 'bad' : 'warn',
+    text: T('{0} is {1}% full ({2} free).', df.mnt, df.pct, df.avail), hint: df.mnt === '/' ? T('A full system disk can stop updates and stop Kodi from saving its library and thumbnails.') : '' })) },
+  { cat: 'storage', check: d => d.mem.Mem && d.mem.Mem.avail / d.mem.Mem.total < 0.1 && { sev: 'warn', text: T('Low available memory: {0} MB of {1} MB.', d.mem.Mem.avail, d.mem.Mem.total) } },
+  { cat: 'storage', check: d => found('bad', find(d, sysSec(d), /Out of memory: Killed process|Memory cgroup out of memory/i),
+    'The system ran out of memory and stopped a program ({0}×).', 'Often caused by an add-on or a large cache setting (cache memory size in advancedsettings.xml or under Settings → Services → Caching).') },
+  // (a FAT volume that "was not properly unmounted" is the unclean-shutdown rule below, not a disk error)
+  { cat: 'storage', check: d => found('bad', find(d, sysSec(d), l => /EXT4-fs error|EXT4-fs \([^)]*\): (?:error|warning)|Buffer I\/O error|I\/O error, dev|blk_update_request: I\/O error|FAT-fs \([^)]*\): .*(?:error|corrupt)|Remounting filesystem read-only|remounted read-only/i.test(l) && !/not properly unmounted/i.test(l)),
+    'File system or disk errors ({0}×).', 'The SD card, eMMC or USB disk may be failing or was not removed safely. Back up your data, check the disk and replace the SD card if the errors return.') },
+  { cat: 'storage', check: d => found('info', find(d, sysSec(d), /not properly unmounted|was not cleanly unmounted|recovery complete|needs? fsck/i),
+    'A disk was not shut down cleanly ({0}×).', 'Usually after a power cut or a USB disk that was pulled out. Shut down from the power menu, and check the disk if errors follow.') },
+
+  // --- hardware & power ---
+  { cat: 'hardware', check: d => found('bad', find(d, sysSec(d), /Under-?voltage detected/i),
+    'Under-voltage detected ({0}×).', 'The power supply is too weak or its cable too thin. Use the official power supply, and power USB disks through a powered hub.') },
+  { cat: 'hardware', check: d => found('warn', find(d, sysSec(d), /usb \S+: (?:device descriptor read\/\S+, error|device not accepting address|unable to enumerate|can't set config|Cannot enable)|over-current/i),
+    'USB errors ({0}×).', 'A USB device is not responding properly. Try another port or cable. USB disks may need more power (a powered hub).') },
+  { cat: 'hardware', check: d => {
+    const ev = find(d, sysSec(d), /hdmitx.*plug ?(?:in|out)\b|HDMI.*hot ?plug|\bhpd\b.*(?:low|high|changed)/i);
+    return ev.count >= 6 && found('warn', ev, 'Many HDMI connect/disconnect events ({0}×).',
+      'The TV or receiver keeps dropping the HDMI connection. Try another HDMI cable or input, and avoid switches or adapters in between.');
+  } },
+  { cat: 'hardware', check: d => {
+    const ev = find(d, 'Pi config-user', /^\s*(?:arm_freq|over_voltage\w*|core_freq|gpu_freq|sdram_freq|h264_freq|v3d_freq|force_turbo)\s*=/i);
+    return ev.count && { sev: 'warn', text: T('Overclocking settings in config-user.txt: {0}.', ev.hits.map(h => h.text.trim()).join(', ')),
+      hint: T('Overclocking can cause freezes, crashes and SD card corruption. Remove these lines if the system is unstable.'), ev };
+  } },
+
+  // --- display ---
+  { cat: 'display', check: d => {
+    const ab = d.abridged.find(s => s.name === 'Adjust display refresh rate');
+    if (ab && /^Off/i.test(ab.value)) return { sev: 'warn', text: T('Adjust display refresh rate is off. Films at 23.976/24 fps may stutter.'),
+      hint: T('Turn it on under Settings → System → Display → Adjust display refresh rate (“On start/stop”).') };
+  } },
+  { cat: 'display', check: d => found('warn', find(d, KODI, l => /RES_DESKTOP/.test(l) && /640x480/.test(l)),
+    'Kodi only found 640x480: the display modes of the TV could not be read ({0}×).',
+    'Check the HDMI cable and turn the TV or receiver on before this device. An AV receiver or HDMI switch in between can hide the modes of the TV.') },
+  { cat: 'display', check: d => {
+    // video calibration per resolution: overscan other than the full screen, or a pixel ratio other than 1
+    const gs = d.log.sec('guisettings.xml'), custom = [];
+    for (const [, r] of gs.matchAll(/<resolution>([\s\S]*?)<\/resolution>/g)) {
+      const g = tag => (new RegExp(`<${tag}>([^<]*)</${tag}>`).exec(r) || [])[1];
+      const desc = g('description') || '', wh = /(\d+)x(\d+)/.exec(desc);
+      const num = tag => parseFloat(g(tag));
+      const shifted = num('left') || num('top') || (wh && ((g('right') && num('right') !== +wh[1]) || (g('bottom') && num('bottom') !== +wh[2])));
+      if (shifted || (g('pixelratio') && Math.abs(num('pixelratio') - 1) > 0.001)) custom.push(desc);
+    }
+    if (!custom.length) return;
+    return { sev: 'info', text: T('Custom video calibration (overscan or pixel ratio) for: {0}.', custom.join(', ')),
+      hint: T('Can give a cropped, shifted or stretched picture. Reset it under Settings → System → Display → Video calibration.'),
+      ev: find(d, 'guisettings.xml', new RegExp(`<description>(?:${custom.map(reEsc).join('|')})</description>`)) };
+  } },
+  { cat: 'display', check: d => {
+    // default view mode for all videos (zoom, stretch, pixel ratio, vertical shift)
+    const s = d.log.byName['guisettings.xml'];
+    if (!s) return;
+    const a = s.lines.findIndex(l => /<defaultvideosettings>/.test(l)), b = s.lines.findIndex(l => /<\/defaultvideosettings>/.test(l));
+    if (a < 0 || b < a) return;
+    const block = s.lines.slice(a, b).join('\n');
+    const g = tag => (new RegExp(`<${tag}>([^<]*)</${tag}>`).exec(block) || [])[1];
+    const changed = [], tags = [];
+    const add = (tag, text) => { changed.push(text); tags.push(tag); };
+    if (g('viewmode') && +g('viewmode') !== 0) add('viewmode', `${T('view mode')} ${VIEWMODES[+g('viewmode')] || g('viewmode')}`);
+    if (g('zoomamount') && Math.abs(+g('zoomamount') - 1) > 0.001) add('zoomamount', `${T('zoom')} ${(+g('zoomamount')).toFixed(2)}`);
+    if (g('pixelratio') && Math.abs(+g('pixelratio') - 1) > 0.001) add('pixelratio', `${T('pixel ratio')} ${(+g('pixelratio')).toFixed(2)}`);
+    if (g('verticalshift') && Math.abs(+g('verticalshift')) > 0.001) add('verticalshift', `${T('vertical shift')} ${(+g('verticalshift')).toFixed(2)}`);
+    if (g('nonlinstretch') === 'true') add('nonlinstretch', T('non-linear stretch'));
+    if (!changed.length) return;
+    // evidence: only the changed lines of the <defaultvideosettings> block
+    const hits = [], tagRe = new RegExp(`<(?:${tags.join('|')})>`);
+    for (let j = a + 1; j < b; j++) if (tagRe.test(s.lines[j])) hits.push({ sec: 'guisettings.xml', line: j, n: s.startLine + j, text: s.lines[j] });
+    const ev = { hits, count: hits.length };
+    return { sev: 'info', text: T('The default view for all videos is changed: {0}.', changed.join(', ')),
+      hint: T('All videos are then zoomed, stretched or shifted. Play a video, set the view back under Settings → Video settings and choose “Set as default for all media”.'), ev };
+  } },
+  { cat: 'display', check: d => {
+    const z = d.gui.find(s => s.id === 'lookandfeel.skinzoom');
+    if (z && +z.value) return { sev: 'info', text: T('Skin zoom is set to {0}%.', z.value), hint: T('Makes the menus larger or smaller; large values can push the menus off the screen.'),
+      ev: find(d, 'guisettings.xml', /"lookandfeel\.skinzoom"/) };
+  } },
+  { cat: 'display', check: d => {
+    const ev = find(d, 'Pi config-user', /^\s*(?:hdmi_\w+|overscan_\w+|disable_overscan|framebuffer_\w+|config_hdmi_boost|display_(?:hdmi_)?rotate|sdtv_mode)\s*=/i);
+    if (!ev.count) return;
+    const kms = /vc4-kms-v3d/.test(d.log.sec('Pi config'));
+    return { sev: 'info', text: T('Display settings in config-user.txt: {0}.', ev.hits.map(h => h.text.trim()).join(', ')),
+      hint: kms ? T('OSMC uses the KMS display driver (vc4-kms-v3d), which ignores many of these older settings or lets them conflict with the display settings in Kodi.')
+        : T('Forced display settings can stop Kodi from using the display modes of the TV.'), ev };
+  } },
+  { cat: 'display', check: d => d.dvCap && /Support mode/.test(d.dvCap) && { sev: 'ok', text: T('The connected display reports Dolby Vision support.') } },
+  { cat: 'display', check: d => d.kodi && d.kodi.playbacks.some(p => p.dovi) && { sev: 'ok', text: T('{0} playback(s) with Dolby Vision in the Kodi log.', d.kodi.playbacks.filter(p => p.dovi).length) } },
+
+  // --- audio ---
+  { cat: 'audio', check: d => {
+    // audio settings by their English name, e.g. ab['Allow passthrough'] === 'false', and the formats the TV/receiver reports
+    const ab = Object.fromEntries(d.abridged.map(s => [s.name, s.value]));
+    const capTxt = d.audioCap.map(r => r[0]).join(' ');
+    const hasAC3 = /AC-?3/i.test(capTxt), hasDDP = /Digital\+|E-?AC-?3|ATMOS/i.test(capTxt), hasMAT = /MAT|TrueHD/i.test(capTxt), hasDTS = /DTS/i.test(capTxt);
+    const out = [];
+    if (ab['Allow passthrough'] === 'false' && (hasAC3 || hasDDP || hasMAT || hasDTS))
+      out.push({ sev: 'warn', text: T('Passthrough is disabled, but the connected device reports support for: {0}.', d.audioCap.map(r => r[0]).filter(f => !/^PCM/i.test(f)).join(', ')),
+        hint: T('Turn on passthrough under Settings → System → Audio to send Dolby and DTS to the receiver unchanged.') });
+    if (ab['Allow passthrough'] === 'true') {
+      const miss = [];
+      if (hasDDP && ab['Dolby Digital Plus (E-AC3) capable receiver'] === 'false') miss.push('Dolby Digital Plus (E-AC3)');
+      if (hasMAT && ab['TrueHD capable receiver'] === 'false') miss.push('TrueHD (MAT)');
+      if (hasDTS && ab['DTS capable receiver'] === 'false') miss.push('DTS');
+      if (miss.length) out.push({ sev: 'info', text: T('Passthrough is enabled, but these formats reported by the device are not enabled in Kodi: {0}.', miss.join(', ')) });
+    }
+    const maxCh = Math.max(0, ...d.audioCap.map(r => parseInt(r[1]) || 0));
+    if (ab['Number of channels'] && parseFloat(ab['Number of channels']) <= 2 && maxCh > 2)
+      out.push({ sev: 'info', text: T('Number of channels is set to {0}, but the device reports up to {1} channels.', ab['Number of channels'], maxCh) });
+    return out;
+  } },
+
+  // --- updates & packages ---
+  { cat: 'updates', check: d => {
+    const ev = find(d, ['OSMC Packages', 'All Other Packages'], /^[a-z][HUFWt]|^..R/);
+    return ev.count && { sev: 'warn', text: T('Packages are not fully installed: {0}.', ev.hits.map(h => h.text.split(/\s+/)[1]).join(', ')),
+      hint: T('An update was interrupted. Update again with My OSMC, or run: sudo apt-get update && sudo apt-get dist-upgrade'), ev };
+  } },
+  { cat: 'updates', check: d => {
+    const ev = find(d, ['OSMC Packages', 'All Other Packages'], /^ii\s+\S*-image-\d/);
+    return ev.count > 2 && { sev: 'warn', text: T('{0} kernels are installed.', ev.count),
+      hint: T('Normally only the newest one or two are needed. Old kernels can fill up the boot partition and make updates fail.'), ev };
+  } },
+  { cat: 'updates', check: d => {
+    const runs = parseAptHistory(d.log.sec('APT history.log'));
+    const plain = /^Commandline: .*\bapt(?:-get)?\s+(?:-\S+\s+)*upgrade\b/;
+    const out = [found('warn', find(d, 'APT history.log', plain), 'APT history shows {0} run(s) of “apt upgrade”.',
+      'OSMC should be updated with My OSMC or “sudo apt-get dist-upgrade”. A plain “upgrade” can leave the system partly updated.')];
+    out.push(found('warn', find(d, 'APT history.log', /^Error: /), 'Errors in the APT history ({0}×).', 'An update failed. Update again with My OSMC and check that there is enough free space.'));
+    const created = Date.parse((d.log.created || '').slice(0, 10)), last = runs[0] && Date.parse(runs[0].start.slice(0, 10));
+    const days = created && last ? Math.round((created - last) / 864e5) : 0;
+    if (days > 180) out.push({ sev: 'info', text: T('The last update in the APT history was {0} ({1} days before the log was made).', runs[0].start.slice(0, 10), days),
+      hint: T('Update with My OSMC → Updater. Many problems are already fixed in newer versions.') });
+    return out;
+  } },
+
+  // --- database ---
+  { cat: 'database', check: d => {
+    const ev = find(d, KODI, kodiErr(/Unable to open database|Can't connect to (?:local )?(?:MySQL|MariaDB)|MySQL error|\[mysql\w*\]|Access denied for user|database disk image is malformed|SQLite error/i));
+    if (!ev.count) return;
+    const shared = /<(?:video|music)database>/.test(d.log.sec('advancedsettings.xml'));
+    return { sev: 'bad', text: T('Database errors in the Kodi log ({0}×).', ev.count), ev,
+      hint: shared ? T('Check the server address, user, password and database name in advancedsettings.xml, that the database server is running, and that all Kodi devices run the same Kodi version.')
+        : T('The local library database may be damaged. Try cleaning the library, or restore a backup of the database.') };
+  } },
+
+  // --- about the log ---
+  { cat: 'log', check: d => d.kodi && (d.kodi.debugLogging
+    ? { sev: 'ok', text: T('Debug logging is enabled, so the Kodi log has full detail.') }
+    : { sev: 'info', text: T('Debug logging is off.'), hint: T('For troubleshooting: enable it under Settings → System → Logging, reproduce the problem and make a new log with grab-logs -A.') }) },
+  { cat: 'log', check: d => {
+    // sections grab-logs failed to collect ("boot cmdline" always fails on Vero devices, so it is ignored)
+    const errSecs = d.log.sections.filter(s => /^An error occurred while grabbing/m.test(s.text) && s.name !== 'boot cmdline');
+    return errSecs.length && { sev: 'info', text: T('grab-logs could not collect: {0}.', errSecs.map(s => s.name).join(', ')) };
+  } },
+  { cat: 'log', check: d => {
+    const cut = d.log.sections.filter(s => s.truncated);
+    return cut.length && { sev: 'warn', text: T('The log file is cut off in: {0}.', cut.map(s => s.name).join(', ')), hint: T('Load the whole file; parts of the log are missing.') };
+  } },
+];
+
+// Runs all rules -> findings with their category, most serious first. A rule that throws is skipped,
+// so one broken rule can't break the page.
+function problems(d) {
+  const out = [], cats = Object.keys(CATS);
+  for (const r of RULES) {
+    let res;
+    try { res = r.check(d); } catch (e) { console.error('Problem rule failed', r, e); continue; }
+    for (const f of [].concat(res || [])) if (f) out.push({ ...f, cat: r.cat });
   }
-  if (d.dvCap && /Support mode/.test(d.dvCap)) o.push(['ok', T('The connected display reports Dolby Vision support.')]);
-  const bIds = d.bannedMatches.filter(m => m.how === 'id'), bNames = d.bannedMatches.filter(m => m.how === 'name');
-  if (bIds.length) o.unshift(['bad', T('Banned add-ons installed: {0}. No support is given on the Kodi and OSMC forums while they are installed.', bIds.map(m => m.id).join(', '))]);
-  if (bNames.length) o.splice(bIds.length ? 1 : 0, 0, ['warn', T('Possibly banned add-ons (name matches the list): {0}.', bNames.map(m => m.id).join(', '))]);
-  // sections grab-logs failed to collect ("boot cmdline" always fails on Vero devices, so it is ignored)
-  const errSecs = d.log.sections.filter(s => /^An error occurred while grabbing/m.test(s.text) && s.name !== 'boot cmdline');
-  if (errSecs.length) o.push(['info', T('grab-logs could not collect: {0}.', errSecs.map(s => s.name).join(', '))]);
-  return o;
+  return out.sort((a, b) => SEV_ORDER[a.sev] - SEV_ORDER[b.sev] || cats.indexOf(a.cat) - cats.indexOf(b.cat));
+}
+// categories switched off in the Problems tab, remembered in this browser
+function catsOff() {
+  try { return new Set(JSON.parse(localStorage.getItem('osmclog.cats.off') || '[]')); } catch { return new Set(); }
+}
+// One finding in the Problems tab: category badge, text, advice and the log lines behind it. The first 5 lines
+// are shown; the rest are folded away. Each line links to the same line in Raw sections.
+function problemHtml(f) {
+  const line = h => {
+    const lv = /\s(error|warning)\s</.exec(h.text);
+    return `<div${lv ? ` class="lv-${lv[1]}"` : ''}><a href="#" class="plain" data-sec="${esc(h.sec)}" data-line="${h.line}" title="${esc(T('Show in Raw sections'))}"><span class="ln">${h.n}</span>${esc(h.text)}</a></div>`;
+  };
+  let ev = '';
+  if (f.ev && f.ev.hits.length) {
+    const first = f.ev.hits.slice(0, 5), rest = f.ev.hits.slice(5);
+    ev = `<div class="lines">${first.map(line).join('')}</div>`;
+    if (rest.length) ev += `<details><summary>${esc(T('Show {0} more lines', rest.length))}</summary><div class="lines">${rest.map(line).join('')}</div></details>`;
+    if (f.ev.count > f.ev.hits.length) ev += `<p class="muted">${esc(T('Showing {0} of {1}. Search Raw sections for the rest.', f.ev.hits.length, f.ev.count))}</p>`;
+  }
+  return `<li class="${f.sev}"><div>${badge(T(CATS[f.cat]))} ${esc(f.text)}</div>${f.hint ? `<div class="hint">${esc(f.hint)}</div>` : ''}${ev}</li>`;
 }
 
 // ---------- rendering ----------
@@ -722,7 +991,7 @@ function render(log, fileName, fileSize) {
     }
   }
   const bannedMatches = matchBanned(allAddons);
-  // parsed data shared by the tabs and observations()
+  // parsed data shared by the tabs and the problem rules
   const d = {
     log, uname, cmd, kodi,
     abridged: parseAbridged(S('GUI Settings (abridged)')),
@@ -751,13 +1020,17 @@ function render(log, fileName, fileSize) {
   const tabs = [];
   const addTab = (id, label, html) => tabs.push({ id, label, html });
 
-  // --- Overview tab: key figures, observations, banned add-ons, system/Kodi/display/hardware, playbacks ---
-  const obs = observations(d);
+  // problem findings; categories switched off in the Problems tab are left out here and in the overview
+  const off = catsOff();
+  const allFound = problems(d), shown = allFound.filter(f => !off.has(f.cat));
+
+  // --- Overview tab: key figures, observations (short list of the problems), system/Kodi/display/hardware, playbacks, banned add-ons ---
   let html = '<div class="stats">' + [
     [T('Device'), device], ['OSMC', osmcVer], ['Kodi', kodi && kodi.info.version], [T('Hostname'), uname.host],
     [T('IP address'), eth && eth.inet], [T('Uptime'), log.uptime != null ? fmtDuration(log.uptime) : ''],
   ].filter(x => x[1]).map(([l, v]) => `<div class="stat"><div class="l">${esc(l)}</div><div class="v">${esc(v)}</div></div>`).join('') + '</div>';
-  html += card(T('Observations'), obs.length ? '<ul class="obs">' + obs.map(([c, t]) => `<li class="${c}">${esc(t)}</li>`).join('') + '</ul>' : `<p class="empty">${T('Nothing notable found.')}</p>`,
+  html += card(T('Observations'), (shown.length ? '<ul class="obs">' + shown.map(f => `<li class="${f.sev}">${esc(f.text)}</li>`).join('') + '</ul>' : `<p class="empty">${T('Nothing notable found.')}</p>`)
+    + `<p class="muted" style="margin:8px 0 0"><a href="#" data-goto="problems">${esc(T('Advice and log lines under Problems →'))}</a></p>`,
     T('automatic checks, not a guarantee'));
   html += '<div class="grid">';
   html += card(T('System'), kv([
@@ -805,6 +1078,16 @@ function render(log, fileName, fileSize) {
     : `<p class="empty">${T('No playbacks in the log.')}</p>`, esc(T('{0} total, newest first', pbs.length)));
   html += bannedCard(bannedMatches, allAddons.size);
   addTab('overview', T('Overview'), html);
+
+  // --- Problems tab: category switches, then every finding with advice and the log lines behind it ---
+  const worst = list => list.reduce((w, f) => SEV_ORDER[f.sev] < SEV_ORDER[w] ? f.sev : w, 'ok');
+  html = card(T('What to look for'), '<div class="toolbar" style="margin:0">' + Object.entries(CATS).map(([id, label]) => {
+    const fs = allFound.filter(f => f.cat === id);
+    return `<label class="chk"><input type="checkbox" data-cat="${id}"${off.has(id) ? '' : ' checked'}> ${esc(T(label))}${fs.length ? ' ' + badge(fs.length, worst(fs)) : ''}</label>`;
+  }).join('') + '</div>', esc(T('categories you switch off are hidden here and in the overview, and remembered in this browser')));
+  html += shown.length ? '<ul class="obs problems">' + shown.map(problemHtml).join('') + '</ul>' : `<p class="empty">${T('Nothing notable found.')}</p>`;
+  const serious = shown.filter(f => f.sev === 'bad' || f.sev === 'warn').length;
+  addTab('problems', T('Problems') + (serious ? ` (${serious})` : ''), html);
 
   // --- Kodi settings tab ---
   // The two settings tables are filled in further down (renderAb / renderGs) because they react to checkboxes and search.
@@ -972,6 +1255,17 @@ function render(log, fileName, fileSize) {
         document.getElementById('banned-status').textContent = T('Could not fetch the list: {0}', err.message);
       }
     }
+  };
+  // category switches in the Problems tab: remember the choice and re-render (the overview uses it too)
+  panelsEl.onchange = e => {
+    const c = e.target.closest('[data-cat]');
+    if (!c) return;
+    const o = catsOff();
+    if (c.checked) o.delete(c.dataset.cat); else o.add(c.dataset.cat);
+    try { localStorage.setItem('osmclog.cats.off', JSON.stringify([...o])); } catch {}
+    const y = window.scrollY;
+    render(log, fileName, fileSize);
+    window.scrollTo(0, y);
   };
   show(tabs.some(t => t.id === activeTab) ? activeTab : 'overview');
 

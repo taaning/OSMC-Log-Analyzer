@@ -16,27 +16,34 @@ The interface is available in English and Danish (the **EN / DA** buttons). The 
 
 | Tab | Contents |
 | --- | --- |
-| **Overview** | Automatic observations, key system facts and a check for banned add-ons |
+| **Overview** | Key system facts, a short list of the problems found, playbacks and a check for banned add-ons |
+| **Problems** | Every problem found, with advice and the log lines behind it; categories can be switched off |
 | **Kodi settings** | All `guisettings.xml` settings, searchable, with an option to show only values changed from the default; `advancedsettings.xml` |
 | **Sources & storage** | Media sources, active network mounts and disk space |
 | **Display & audio** | The TV/receiver's EDID (supported modes, HDR, Dolby Vision, audio formats), current display mode, user display overrides, Kodi's audio settings and passthrough formats, resolution changes |
 | **System** | Hardware and network, OSMC and Debian packages, APT sources and history, kernel and system journal errors and warnings |
-| **Kodi log** | Errors grouped and counted, playbacks, and a search across the whole log |
-| **Raw sections** | Each section of the log file as it is, for anything the other tabs don't cover |
+| **Kodi log** | Errors grouped and counted (click one to jump to its line in Raw sections), playbacks and installed add-ons |
+| **Raw sections** | Each section of the log file as it is, with a search across the whole log, for anything the other tabs don't cover |
 
-### Observations
+### Problems
 
-The overview flags common problems and things worth knowing, for example:
+The page checks the log for common problems, many of them ones that helpers on the OSMC forum often point out in users' logs. Each finding has a severity, a short piece of advice and the log lines that triggered it; clicking a line opens it in **Raw sections**. The checks are grouped in categories that can be switched off in the Problems tab (the choice is remembered in the browser):
 
-- Audio passthrough is off although the TV/receiver supports it, or supported formats are not enabled in Kodi
-- The number of audio channels is set lower than the device supports
-- **Adjust display refresh rate** is off (films at 23.976/24 fps may stutter)
-- Debug logging is on
-- Nearly full disks, low available memory and network errors
-- Errors that repeat many times in the Kodi log
-- Outdated or broken repositories
-- Dolby Vision support and playbacks
-- Sections that `grab-logs` could not collect
+| Category | Examples |
+| --- | --- |
+| **Add-ons** | Banned add-ons, broken repositories, Python errors in add-ons |
+| **Network shares** | SMB and NFS shares Kodi could not open, failed mounts |
+| **Network** | Lost connections during playback, DNS errors, Wi-Fi instead of a cable, interface errors |
+| **Crashes & errors** | Program crashes (segfaults), Kodi errors that repeat many times |
+| **Storage & memory** | Nearly full disks, low memory, out-of-memory kills, file system errors, unclean shutdowns |
+| **Hardware & power** | Under-voltage, USB errors, HDMI connection drops, overclocking in `config-user.txt` |
+| **Display** | Refresh rate adjustment off, only 640x480 found, custom video calibration, changed default view (zoom/stretch), skin zoom, display settings in `config-user.txt`, Dolby Vision |
+| **Audio** | Passthrough off although the TV/receiver supports it, formats not enabled, too few channels |
+| **Updates & packages** | Packages not fully installed, many old kernels, `apt upgrade` instead of `dist-upgrade`, APT errors, no updates for a long time |
+| **Database** | MySQL/MariaDB connection errors and damaged databases |
+| **About the log** | Debug logging off, sections `grab-logs` could not collect, a cut-off log file |
+
+The checks are hints, not a diagnosis: a finding is not always the cause of a problem, and not every problem is detected.
 
 ### Banned add-ons
 
@@ -74,7 +81,7 @@ The comment at the top of `index.html` describes how the script is organised and
 
 - add a translated text
 - read a new log section
-- add an observation
+- add a check (a rule in `RULES`)
 - add a tab
 
 New texts are written in English in the code as `T('English text')`, and the same key is added to `lang/en.json` and `lang/da.json`. A missing key just shows the English text.
