@@ -833,7 +833,7 @@ const RULES = [
   { cat: 'crashes', check: d => [[d.kodi, 'Kodi Log', 'The Kodi log has {0} repeats of the error: “{1}”.'],
     [d.oldKodi, 'Kodi Old Log', 'The previous Kodi log has {0} repeats of the error: “{1}”.']].map(([k, sec, text]) => {
     // the most repeated error in each Kodi log (the counts include "Skipped N duplicate messages")
-    const top = k && [...k.groups.values()].filter(g => g.level === 'error').sort((a, b) => b.count - a.count)[0];
+    const top = k && [...k.groups.values()].filter(g => g.level === 'error' && !harmlessWhy(g.msg)).sort((a, b) => b.count - a.count)[0];
     if (!top || top.count < 50) return null;
     const s = d.log.byName[sec];
     return { sev: 'warn', text: T(text, top.count, top.msg.slice(0, 160)),
@@ -1099,6 +1099,73 @@ function problemHtml(f) {
   return `<li class="${f.sev}"><div>${badge(T(CATS[f.cat]))} ${esc(f.text)}</div>${f.hint ? `<div class="hint">${esc(f.hint)}</div>` : ''}${ev}</li>`;
 }
 
+// ---------- known harmless messages ----------
+// Errors and warnings that show up in almost every OSMC log, also from systems without problems, and that don't
+// need any action. The error lists in the Kodi log and System tabs hide them unless "Show known harmless messages"
+// is ticked, and the repeated-error rule ignores them. [regex, reason shown as a tooltip]
+const EVERY_START = 'Logged on every start; not a problem.';
+const HARMLESS = [
+  // Kodi log
+  [/DBus error: org\.freedesktop\.DBus\.Error\.ServiceUnknown - The name org\.freedesktop\.UPower/, 'OSMC has no UPower service; Kodi uses another way to shut down.'],
+  [/\[xkb\] couldn't find a Compose file|CLibInputKeyboard: Failed to compile localized compose table/, 'Only affects composed characters typed on a USB keyboard.'],
+  [/OSMCSecureOS(?:::getKeyId: unable to get key id|: key-id = <unknown>)/, EVERY_START],
+  [/CAddonMgr::FindAddons: Addon '[^']+' already present with higher version/, 'Kodi uses the newer copy of the add-on.'],
+  [/JSONRPC: Could not parse type "Setting\.Details\.SettingList"/, EVERY_START],
+  [/CActiveAE::StateMachine - signal: \d+ from port: OutputControlPort not handled/, EVERY_START],
+  [/missing version attribute/, EVERY_START],
+  [/LoadTimers: Could not load timers file .*Timers\.xml/, 'The skin has no timers file.'],
+  [/Skin has invalid include: Custom_Overlay_Debug_Grid_coords/, EVERY_START],
+  [/\[GBM\] missing support for EGL_KHR_fence_sync/, EVERY_START],
+  [/CDVDMessageQueue\(audio\)::Put MSGQ_NOT_INITIALIZED/, 'Logged when a playback starts; not a problem.'],
+  [/Update3dResolutions: No valid 3D resolutions found/, 'The TV has no 3D modes.'],
+  [/GetDirectory - Error getting udf:\/\/.*\/BDMV\/META\//, 'The disc image has no menu metadata; playback is not affected.'],
+  [/is deprecated and might be removed in future Kodi versions/, 'A note for the add-on’s author; it does not affect playback.'],
+  // system journal and kernel (Vero): drivers probing hardware the Vero doesn't have or use, at every start
+  [/tee_client_open_session failed|meson-mmc: (?:sdio: resp_timeout|get temperature failed)|could not get clock \/(?:cvbsout|amhdmitx):|cvbsout_clktree_probe|aml_iomap: (?:read|write) cbus reg/, EVERY_START],
+  [/Failed to add I2SIn CLK|failed add snd tdm controls|aml_tdm_get_pins error|failed to get vad wakeup sample rate|Failed to add audio effects v1 controls/, EVERY_START],
+  [/failed to get msr ring reg0|platform get irq earc_tx failed|dmi: Firmware registration failed|verity-avb: AVB error handler|ion-dev: failed get|failed to init DMA memory pool/, EVERY_START],
+  [/picdec: probe of picdec failed|request_irq error ret=-22|dev_pm_set_wake_irq failed|page_trace_module_init, create sysfs failed|get gate \w+ control failed/, EVERY_START],
+  [/Failed to query device driver: Device or resource busy|Unable to detect cache hierarchy|read auto_cali_idx fail|get fclk_div5 fail|fail to init PTP|RX aggregation threshold/, EVERY_START],
+  [/evrepeat .* failed with exit code|Failed to call EVIOCSKEYCODE|mpd_setminalloc: ignoring request/, EVERY_START],
+  [/RTW: WARN Invalid rate/, 'A message from the Wi-Fi driver; not a problem.'],
+  [/hdmitx: \[load_edid_data\] failed to open file/, 'No custom EDID file is used, which is normal.'],
+  // system journal and kernel (Raspberry Pi)
+  [/module is from the staging directory, the quality is unknown|ignored null byte in input|connman-vpn\.service not found|urandom warning\(s\) missed/, EVERY_START],
+  [/kernel reports TIME_ERROR: .*Clock Unsynchronized/, 'The clock is not set yet just after start.'],
+];
+// The reason a message is known to be harmless (English, for T()), or undefined.
+const harmlessWhy = s => (HARMLESS.find(([re]) => re.test(s)) || [])[1];
+// Whether the error lists show the known harmless messages (remembered in this browser; hidden by default).
+function showHarmless() {
+  try { return localStorage.getItem('osmclog.harmless') === 'show'; } catch { return false; }
+}
+// Table rows for grouped messages ([{ text, … }]) with the known harmless ones left out, or dimmed with a badge
+// when they are shown. cells(g) gives the row's cells; its last cell is the message. -> { rows, hidden }
+function harmlessRows(groups, cells) {
+  const show = showHarmless();
+  let hidden = 0;
+  const rows = [];
+  for (const g of groups) {
+    const why = harmlessWhy(g.text);
+    if (why && !show) { hidden++; continue; }
+    const c = cells(g);
+    if (why) {
+      c[c.length - 1] = raw(val(c[c.length - 1]) + ` <span class="badge" title="${esc(T(why))}">${esc(T('known harmless'))}</span>`);
+      c.cls = 'harmless';
+    }
+    rows.push(c);
+  }
+  return { rows, hidden };
+}
+// Checkbox that shows or hides the known harmless messages in all error lists (handled in render()).
+const harmlessToggle = n => `<div class="toolbar"><label class="chk"><input type="checkbox" data-harmless${showHarmless() ? ' checked' : ''}> ${esc(T('Show known harmless messages ({0})', n))}</label></div>`;
+// An error list: the toggle, then the table, or a note when every message is a hidden harmless one.
+function harmlessTable(groups, headers, cells, opts) {
+  const { rows, hidden } = harmlessRows(groups, cells);
+  return harmlessToggle(groups.filter(g => harmlessWhy(g.text)).length)
+    + (!rows.length && hidden ? `<p class="empty">${esc(T('Only known harmless messages.'))}</p>` : table(headers, rows.slice(0, opts.max || rows.length), opts));
+}
+
 // ---------- rendering ----------
 // Builds the whole result view from a parsed log. It is called again on a language switch and after the
 // banned list is updated, so it must only depend on its arguments and global state (lang, banned, activeTab).
@@ -1339,14 +1406,18 @@ function render(log, fileName, fileSize) {
       <div class="body">${h.error ? `<p class="badge bad">${esc(h.error)}</p>` : ''}${[['Installed', h.install], ['Upgraded', h.upgrade], ['Removed', h.remove], ['Purged', h.purge]].filter(x => x[1].length)
       .map(([l, p]) => `<h4>${esc(T(l))}</h4><div class="lines">${p.map(x => `<div>${esc(x)}</div>`).join('')}</div>`).join('')}</div></details>`).join('') : `<p class="empty">${T('None')}</p>`, T('newest first'));
   const jErr = groupJournal(S('System Journal'), /\b(error|failed|failure|fatal|segfault|timed out)\b/i);
-  html += card(T('System journal: errors and warnings'), table([T('Count'), T('Message')], jErr.slice(0, 60).map(g => [g.count, raw(`<span class="mono">${esc(g.text)}</span>`)]), { scroll: true }), esc(T('{0} unique messages, grouped', jErr.length)));
+  // known harmless messages are left out unless "Show known harmless messages" is ticked (see HARMLESS)
+  const msgCells = g => [g.count, raw(`<span class="mono">${esc(g.text)}</span>`)];
+  html += card(T('System journal: errors and warnings'), harmlessTable(jErr, [T('Count'), T('Message')], msgCells, { scroll: true, max: 60 }),
+    esc(T('{0} unique messages, grouped', jErr.length)));
   const kErr = groupJournal(S('Kernel Message Log'), /\b(error|failed|fail|warning|timeout|unable)\b/i);
-  html += card(T('Kernel messages: errors and warnings'), table([T('Count'), T('Message')], kErr.slice(0, 60).map(g => [g.count, raw(`<span class="mono">${esc(g.text)}</span>`)]), { scroll: true }), esc(T('{0} unique messages', kErr.length)));
+  html += card(T('Kernel messages: errors and warnings'), harmlessTable(kErr, [T('Count'), T('Message')], msgCells, { scroll: true, max: 60 }),
+    esc(T('{0} unique messages', kErr.length)));
   addTab('system', T('System'), html);
 
   // --- Kodi log tab: only the log selector here; the content is built by renderKl() below ---
   const kodiLogs = ['Kodi Log', 'Kodi Old Log'].filter(n => S(n).trim());
-  html = `<div class="toolbar"><label class="chk">${esc(T('Log:'))} <select id="kl-sel">${kodiLogs.map(n => `<option>${esc(n)}</option>`).join('')}</select></label></div><div id="kl-out"></div>`;
+  html = `<div class="toolbar"><label class="chk">${esc(T('Log:'))} <select id="kl-sel">${kodiLogs.map(n => `<option${n === klLog ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select></label></div><div id="kl-out"></div>`;
   addTab('kodilog', T('Kodi log'), html);
 
   // --- Raw sections tab: search and sort controls; the list is built by renderRaw() below ---
@@ -1389,12 +1460,18 @@ function render(log, fileName, fileSize) {
     }
   };
   // category switches in the Problems tab: remember the choice and re-render (the overview uses it too)
+  // and the "Show known harmless messages" checkboxes in the error lists (one setting for all of them)
   panelsEl.onchange = e => {
-    const c = e.target.closest('[data-cat]');
-    if (!c) return;
-    const o = catsOff();
-    if (c.checked) o.delete(c.dataset.cat); else o.add(c.dataset.cat);
-    try { localStorage.setItem('osmclog.cats.off', JSON.stringify([...o])); } catch {}
+    const c = e.target.closest('[data-cat]'), hm = e.target.closest('[data-harmless]');
+    if (!c && !hm) return;
+    try {
+      if (hm) localStorage.setItem('osmclog.harmless', hm.checked ? 'show' : 'hide');
+      else {
+        const o = catsOff();
+        if (c.checked) o.delete(c.dataset.cat); else o.add(c.dataset.cat);
+        localStorage.setItem('osmclog.cats.off', JSON.stringify([...o]));
+      }
+    } catch {}
     const y = window.scrollY;
     render(log, fileName, fileSize);
     window.scrollTo(0, y);
@@ -1452,11 +1529,11 @@ function render(log, fileName, fileSize) {
     h += card(T('Kodi info'), kv([[T('Version'), k.info.version], [T('Running on'), k.info.runningOn], [T('Compiled'), k.info.compiled], [T('FFmpeg'), k.info.ffmpeg],
       [T('Hostname'), k.info.hostname], [T('GUI'), k.info.guiFormat], [T('Debug logging'), yesNo(k.debugLogging)],
       [T('Log levels'), raw(Object.entries(k.levels).map(([l, n]) => badge(`${l}: ${n}`, l === 'error' ? 'bad' : l === 'warning' ? 'warn' : '')).join(' '))]]));
-    const grp = [...k.groups.values()].sort((a, b) => b.count - a.count);
+    const grp = [...k.groups.values()].sort((a, b) => b.count - a.count).map(g => ({ ...g, text: g.msg }));
     // first/last time and the message link to that line in Raw sections
     const lineLink = (n, html) => `<a href="#" class="plain" data-sec="${esc(name)}" data-line="${n}" title="${esc(T('Show in Raw sections'))}">${html}</a>`;
-    h += card(T('Errors and warnings'), table([T('Level'), T('Count'), T('First'), T('Last'), T('Message')], grp.map(g => [raw(badge(g.level, g.level === 'warning' ? 'warn' : 'bad')), g.count,
-      raw(lineLink(g.firstLine, esc(g.first))), raw(lineLink(g.lastLine, esc(g.last))), raw(lineLink(g.firstLine, `<span class="mono">${esc(g.msg)}</span>`))]), { scroll: true }),
+    h += card(T('Errors and warnings'), harmlessTable(grp, [T('Level'), T('Count'), T('First'), T('Last'), T('Message')], g => [raw(badge(g.level, g.level === 'warning' ? 'warn' : 'bad')), g.count,
+      raw(lineLink(g.firstLine, esc(g.first))), raw(lineLink(g.lastLine, esc(g.last))), raw(lineLink(g.firstLine, `<span class="mono">${esc(g.msg)}</span>`))], { scroll: true }),
       esc(T('grouped, incl. “Skipped N duplicate messages” · click to show in Raw sections')));
     // the sync and late-frame figures need component logging; say so when the log has none
     const noComp = k.playbacks.length && !k.playbacks.some(p => p.st.renders);
@@ -1480,7 +1557,8 @@ function render(log, fileName, fileSize) {
       T('from CAddonMgr::FindAddons'));
     klOut.innerHTML = h;
   };
-  klSel.onchange = renderKl; renderKl();
+  klSel.onchange = () => { klLog = klSel.value; renderKl(); };
+  renderKl();
 
   // Raw sections tab. Without a search: every section as a collapsed <details>; its lines are only drawn
   // when it is opened, because some sections have thousands of lines. With a search (2+ characters):
@@ -1560,6 +1638,8 @@ function render(log, fileName, fileSize) {
 let current = null;
 // A newly loaded log always opens on the overview; a language switch keeps the current tab.
 let activeTab = 'overview';
+// The Kodi log shown in the Kodi log tab (current or previous), kept when the page is re-rendered.
+let klLog = '';
 // earlier versions remembered the last tab; remove that leftover setting
 try { localStorage.removeItem('osmclog.tab'); } catch {}
 // Translates the static texts (data-i18n / data-i18n-html) and re-renders the result view, if any.
@@ -1591,7 +1671,7 @@ async function load(file) {
   await Promise.all([bannedReady, langReady]);
   if (!log.sections.length) { alert(T('Could not find any OSMC log sections in the file. Is it a log from grab-logs?')); return; }
   try {
-    activeTab = 'overview';
+    activeTab = 'overview'; klLog = '';
     render(log, file.name, file.size);
     window.scrollTo(0, 0);
   } catch (err) {

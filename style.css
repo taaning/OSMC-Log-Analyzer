@@ -103,6 +103,8 @@ details > .body { padding: 0 12px 12px; }
 .lines .ln { color: var(--muted); display: inline-block; min-width: 5.5em; user-select: none; }
 .lines .lv-error { color: var(--bad); }
 .lines .lv-warning { color: var(--warn); }
+/* known harmless messages, when shown in the error lists */
+tr.harmless td { opacity: .6; }
 /* line jumped to from the Kodi log tab */
 .lines .target { background: var(--mark); box-shadow: inset 3px 0 var(--accent); }
 mark { background: var(--mark); color: inherit; border-radius: 2px; }

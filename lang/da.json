@@ -390,5 +390,20 @@
   "The video decoder reported Dolby Vision metadata errors ({0}×).": "Videodekoderen meldte fejl i Dolby Vision-metadata ({0}×).",
   "The Dolby Vision data in a file could not be read, which can give wrong colours or brightness. Usually a problem with that file (for example a converted DV file). If it happens with all Dolby Vision files, ask on the OSMC forum with this log.": "Dolby Vision-data i en fil kunne ikke læses, hvilket kan give forkerte farver eller lysstyrke. Som regel et problem med den fil (fx en konverteret DV-fil). Sker det med alle Dolby Vision-filer, så spørg på OSMC-forummet med denne log.",
   "Large audio sync errors during playback ({0}×).": "Store fejl i lydsynkroniseringen under afspilning ({0}×).",
-  "Kodi had to correct a large gap between sound and picture, which can be heard as a drop-out or seen as a jump. It often comes from the source (network, damaged file) or from audio settings such as passthrough.": "Kodi måtte rette en stor forskel mellem lyd og billede, hvilket kan høres som et udfald eller ses som et hop. Det skyldes ofte kilden (netværk, beskadiget fil) eller lydindstillinger som passthrough."
+  "Kodi had to correct a large gap between sound and picture, which can be heard as a drop-out or seen as a jump. It often comes from the source (network, damaged file) or from audio settings such as passthrough.": "Kodi måtte rette en stor forskel mellem lyd og billede, hvilket kan høres som et udfald eller ses som et hop. Det skyldes ofte kilden (netværk, beskadiget fil) eller lydindstillinger som passthrough.",
+  "Show known harmless messages ({0})": "Vis kendte harmløse beskeder ({0})",
+  "known harmless": "kendt harmløs",
+  "Logged on every start; not a problem.": "Logges ved hver start; ikke et problem.",
+  "OSMC has no UPower service; Kodi uses another way to shut down.": "OSMC har ingen UPower-tjeneste; Kodi lukker ned på en anden måde.",
+  "Only affects composed characters typed on a USB keyboard.": "Påvirker kun sammensatte tegn skrevet på et USB-tastatur.",
+  "Kodi uses the newer copy of the add-on.": "Kodi bruger den nyere udgave af add-on’et.",
+  "The skin has no timers file.": "Skinnet har ingen timer-fil.",
+  "Logged when a playback starts; not a problem.": "Logges når en afspilning starter; ikke et problem.",
+  "The TV has no 3D modes.": "TV’et har ingen 3D-tilstande.",
+  "The disc image has no menu metadata; playback is not affected.": "Disk-imaget har ingen menu-metadata; afspilningen påvirkes ikke.",
+  "A note for the add-on’s author; it does not affect playback.": "En note til add-on’ets udvikler; den påvirker ikke afspilningen.",
+  "A message from the Wi-Fi driver; not a problem.": "En besked fra Wi-Fi-driveren; ikke et problem.",
+  "No custom EDID file is used, which is normal.": "Der bruges ingen brugerdefineret EDID-fil, hvilket er normalt.",
+  "The clock is not set yet just after start.": "Uret er ikke stillet endnu lige efter start.",
+  "Only known harmless messages.": "Kun kendte harmløse beskeder."
 }

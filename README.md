@@ -21,9 +21,13 @@ The interface is available in English and Danish (the **EN / DA** buttons). The 
 | **Kodi settings** | All `guisettings.xml` settings, searchable, with an option to show only values changed from the default; `advancedsettings.xml` |
 | **Sources & storage** | Media sources, active network mounts and disk space |
 | **Display & audio** | The TV/receiver's EDID (supported modes, HDR, Dolby Vision, audio formats), current display mode, user display overrides, Kodi's audio settings and passthrough formats, resolution changes |
-| **System** | Hardware and network, OSMC and Debian packages, APT sources and history, kernel and system journal errors and warnings |
-| **Kodi log** | Errors grouped and counted (click one to jump to its line in Raw sections), playbacks with how each one started (refresh rate switch, buffering, time to first picture, A/V sync and late frames at the start) and installed add-ons |
+| **System** | Hardware and network, OSMC and Debian packages, APT sources and history, kernel and system journal errors and warnings (known harmless messages hidden) |
+| **Kodi log** | Errors grouped and counted, known harmless messages hidden (click one to jump to its line in Raw sections), playbacks with how each one started (refresh rate switch, buffering, time to first picture, A/V sync and late frames at the start) and installed add-ons |
 | **Raw sections** | Each section of the log file as it is, with a search across the whole log, for anything the other tabs don't cover |
+
+### Known harmless messages
+
+Every OSMC log contains errors and warnings that are not problems, for example drivers on the Vero probing hardware it doesn't have, or Kodi messages logged on every start. The error lists in the **Kodi log** and **System** tabs hide these so the real errors stand out. Tick **Show known harmless messages** to see them, dimmed and with the reason as a tooltip. The list was built from real logs of systems without those problems.
 
 ### Problems
 

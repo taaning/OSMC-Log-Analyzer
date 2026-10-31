@@ -390,5 +390,20 @@
   "The video decoder reported Dolby Vision metadata errors ({0}×).": "The video decoder reported Dolby Vision metadata errors ({0}×).",
   "The Dolby Vision data in a file could not be read, which can give wrong colours or brightness. Usually a problem with that file (for example a converted DV file). If it happens with all Dolby Vision files, ask on the OSMC forum with this log.": "The Dolby Vision data in a file could not be read, which can give wrong colours or brightness. Usually a problem with that file (for example a converted DV file). If it happens with all Dolby Vision files, ask on the OSMC forum with this log.",
   "Large audio sync errors during playback ({0}×).": "Large audio sync errors during playback ({0}×).",
-  "Kodi had to correct a large gap between sound and picture, which can be heard as a drop-out or seen as a jump. It often comes from the source (network, damaged file) or from audio settings such as passthrough.": "Kodi had to correct a large gap between sound and picture, which can be heard as a drop-out or seen as a jump. It often comes from the source (network, damaged file) or from audio settings such as passthrough."
+  "Kodi had to correct a large gap between sound and picture, which can be heard as a drop-out or seen as a jump. It often comes from the source (network, damaged file) or from audio settings such as passthrough.": "Kodi had to correct a large gap between sound and picture, which can be heard as a drop-out or seen as a jump. It often comes from the source (network, damaged file) or from audio settings such as passthrough.",
+  "Show known harmless messages ({0})": "Show known harmless messages ({0})",
+  "known harmless": "known harmless",
+  "Logged on every start; not a problem.": "Logged on every start; not a problem.",
+  "OSMC has no UPower service; Kodi uses another way to shut down.": "OSMC has no UPower service; Kodi uses another way to shut down.",
+  "Only affects composed characters typed on a USB keyboard.": "Only affects composed characters typed on a USB keyboard.",
+  "Kodi uses the newer copy of the add-on.": "Kodi uses the newer copy of the add-on.",
+  "The skin has no timers file.": "The skin has no timers file.",
+  "Logged when a playback starts; not a problem.": "Logged when a playback starts; not a problem.",
+  "The TV has no 3D modes.": "The TV has no 3D modes.",
+  "The disc image has no menu metadata; playback is not affected.": "The disc image has no menu metadata; playback is not affected.",
+  "A note for the add-on’s author; it does not affect playback.": "A note for the add-on’s author; it does not affect playback.",
+  "A message from the Wi-Fi driver; not a problem.": "A message from the Wi-Fi driver; not a problem.",
+  "No custom EDID file is used, which is normal.": "No custom EDID file is used, which is normal.",
+  "The clock is not set yet just after start.": "The clock is not set yet just after start.",
+  "Only known harmless messages.": "Only known harmless messages."
 }
