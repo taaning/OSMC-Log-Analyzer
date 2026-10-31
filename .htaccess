@@ -1,0 +1,4 @@
+# Revalidate on every load so updates show up without a forced reload
+<FilesMatch "\.(html|css|json)$">
+    Header set Cache-Control "no-cache"
+</FilesMatch>
