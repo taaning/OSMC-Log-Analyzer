@@ -414,8 +414,10 @@ function parseEdid(t) {
 }
 // "Audio Cap": audio formats the TV/receiver reports -> [[format, channels, sample rates, …extra]]
 // (the first line is a column header and is skipped).
+// Only format lines ("AC-3, 6 ch, …") are kept: some devices add a "Reserved" line and an indented
+// "Dolby Vendor Specific" block (Ver:1.0, center_speaker:1 …) that are not formats.
 function parseAudioCap(t) {
-  return t.split('\n').slice(1).filter(l => l.includes(',')).map(l => l.split(',').map(s => s.trim()));
+  return t.split('\n').slice(1).filter(l => /^[^\s,][^,]*, \d+ ch\b/.test(l) && !/^Reserved\b/.test(l)).map(l => l.split(',').map(s => s.trim()));
 }
 
 // "Kodi Log" / "Kodi Old Log": lines like
@@ -727,15 +729,19 @@ const kodiErr = re => new RegExp(String.raw`\s(?:error|fatal) <[^>]+>: .*(?:` + 
 
 // Finds the lines of one or more sections that match test (a regex without the g flag, or a function)
 // -> { hits (at most max), count }. line is the 0-based line within the section (for jumping to Raw sections),
-// n the line number in the file. Missing sections are skipped.
-function find(d, secs, test, max = 50) {
+// n the line number in the file. Missing sections are skipped. With perEntry, only the first matching line of
+// each log entry counts (an entry is a line that doesn't start with whitespace plus its indented continuation lines).
+function find(d, secs, test, max = 50, perEntry = false) {
   const ok = typeof test === 'function' ? test : l => test.test(l);
   const ev = { hits: [], count: 0 };
   for (const name of [].concat(secs)) {
     const s = d.log.byName[name];
     if (!s) continue;
+    let entry = -1, counted = -1;
     s.lines.forEach((l, j) => {
-      if (!ok(l)) return;
+      if (!/^\s/.test(l)) entry = j;
+      if (!ok(l) || (perEntry && counted === entry)) return;
+      counted = entry;
       ev.count++;
       if (ev.hits.length < max) ev.hits.push({ sec: name, line: j, n: s.startLine + j, text: l });
     });
@@ -766,13 +772,18 @@ const RULES = [
     let ev = find(d, KODI, /EXCEPTION Thrown/);
     if (!ev.count) ev = find(d, KODI, /Traceback \(most recent call last\)/);
     if (!ev.count) return;
+    // the culprit is the first add-on in the traceback that is not a shared module (script.module.urllib3 …);
+    // the traceback ends at the next timestamped line
     const ids = new Set();
     for (const h of ev.hits) {
-      const lines = d.log.byName[h.sec].lines;
-      for (let j = h.line; j < Math.min(lines.length, h.line + 40); j++) {
+      const lines = d.log.byName[h.sec].lines, inTrace = [];
+      for (let j = h.line; j < Math.min(lines.length, h.line + 60); j++) {
+        if (j > h.line && /^\d{4}-\d\d-\d\d /.test(lines[j])) break;
         const m = /addons\/((?:plugin|script|service|skin|context|metadata|resource|repository|weather|screensaver)\.[\w.-]+)\//.exec(lines[j]);
-        if (m) { ids.add(m[1]); break; }
+        if (m) inTrace.push(m[1]);
       }
+      const id = inTrace.find(x => !x.startsWith('script.module.')) || inTrace[0];
+      if (id) ids.add(id);
     }
     return { sev: 'warn', text: ids.size ? T('Python errors in add-ons ({0}×): {1}.', ev.count, [...ids].join(', ')) : T('Python errors in add-ons ({0}×).', ev.count),
       hint: T('Update the add-on or ask its author for help. Errors in third-party add-ons are not OSMC problems.'), ev };
@@ -795,8 +806,19 @@ const RULES = [
   // --- network ---
   { cat: 'network', check: d => found('warn', find(d, KODI, l => kodiErr(/Software caused connection abort|Connection reset by peer|Connection timed out|Operation timed out|Network is unreachable|No route to host/i).test(l) && !/SMB|NFS/i.test(l)),
     'Network connection errors in the Kodi log ({0}×).', 'The connection to a server was lost, often during playback. Check cables, the Wi-Fi signal and the server. A wired connection is more reliable.') },
-  { cat: 'network', check: d => found('warn', find(d, [...KODI, sysSec(d)], /Could(?:n't| not) resolve|Name or service not known|Temporary failure in name resolution/i),
+  // (counted once per log entry: a Python traceback repeats the same DNS error on several lines)
+  { cat: 'network', check: d => found('warn', find(d, [...KODI, sysSec(d)], /Could(?:n't| not) resolve|Failed to resolve|Unable to lookup host|Name or service not known|Temporary failure in name resolution/i, 50, true),
     'Name lookup (DNS) errors ({0}×).', 'Server names or internet addresses could not be looked up. Check the DNS server in the network settings, or use IP addresses for shares.') },
+  { cat: 'network', check: d => {
+    // TV (PVR) add-ons that can't log in to or reach their backend, e.g. "AddOnLog: pvr.hts: Command authenticate failed: Access denied"
+    const ev = find(d, KODI, kodiErr(/AddOnLog: pvr\.[\w.]+: .*(?:authenticat\w* failed|Access denied|Login failed|unable to connect|connection refused|failed to connect)/i));
+    if (!ev.count) return;
+    const ids = [...new Set(ev.hits.map(h => (/AddOnLog: (pvr\.[\w.]+):/.exec(h.text) || [])[1]).filter(Boolean))];
+    const login = ev.hits.some(h => /authenticat|Access denied|Login failed/i.test(h.text));
+    return { sev: 'warn', text: T('The TV add-on {0} could not connect to its backend ({1}×).', ids.join(', '), ev.count), ev,
+      hint: login ? T('The TV server (for example Tvheadend) refused the login. Check the user name and password in the add-on’s settings, and the user’s rights on the server.')
+        : T('Check the server address and port in the add-on’s settings, and that the TV server is running.') };
+  } },
   { cat: 'network', check: d => {
     const wl = d.ifaces.find(i => i.inet && /^wl/.test(i.name));
     if (wl && !d.ifaces.some(i => i.inet && /^(eth|en)/.test(i.name)))
@@ -808,14 +830,16 @@ const RULES = [
   // --- crashes & errors ---
   { cat: 'crashes', check: d => found('bad', find(d, sysSec(d), /segfault at|status=(?:11\/SEGV|7\/BUS|6\/ABRT)|SIGSEGV|SIGBUS|core dumped|code=dumped/i),
     'Signs of a program crash ({0}×).', 'If it is Kodi (kodi.bin), a recently installed add-on or skin is a common cause. Crashes during updates can point to a weak power supply or a failing SD card.') },
-  { cat: 'crashes', check: d => {
-    const top = d.kodi && [...d.kodi.groups.values()].filter(g => g.level === 'error').sort((a, b) => b.count - a.count)[0];
-    if (!top || top.count < 50) return;
-    const s = d.log.byName['Kodi Log'];
-    return { sev: 'warn', text: T('The Kodi log has {0} repeats of the error: “{1}”.', top.count, top.msg.slice(0, 160)),
+  { cat: 'crashes', check: d => [[d.kodi, 'Kodi Log', 'The Kodi log has {0} repeats of the error: “{1}”.'],
+    [d.oldKodi, 'Kodi Old Log', 'The previous Kodi log has {0} repeats of the error: “{1}”.']].map(([k, sec, text]) => {
+    // the most repeated error in each Kodi log (the counts include "Skipped N duplicate messages")
+    const top = k && [...k.groups.values()].filter(g => g.level === 'error').sort((a, b) => b.count - a.count)[0];
+    if (!top || top.count < 50) return null;
+    const s = d.log.byName[sec];
+    return { sev: 'warn', text: T(text, top.count, top.msg.slice(0, 160)),
       hint: T('An error that repeats this often can slow Kodi down and fills the log. It usually points to an add-on, a source or a setting.'),
-      ev: { hits: [{ sec: 'Kodi Log', line: top.firstLine, n: s.startLine + top.firstLine, text: s.lines[top.firstLine] }], count: 1 } };
-  } },
+      ev: { hits: [{ sec, line: top.firstLine, n: s.startLine + top.firstLine, text: s.lines[top.firstLine] }], count: 1 } };
+  }) },
 
   // --- storage & memory ---
   { cat: 'storage', check: d => d.df.filter(df => df.pct >= 85 && !/^(tmpfs|devtmpfs)$/.test(df.fs)).map(df => ({ sev: df.pct >= 95 ? 'bad' : 'warn',
@@ -835,9 +859,23 @@ const RULES = [
   { cat: 'hardware', check: d => found('warn', find(d, sysSec(d), /usb \S+: (?:device descriptor read\/\S+, error|device not accepting address|unable to enumerate|can't set config|Cannot enable)|over-current/i),
     'USB errors ({0}×).', 'A USB device is not responding properly. Try another port or cable. USB disks may need more power (a powered hub).') },
   { cat: 'hardware', check: d => {
-    const ev = find(d, sysSec(d), /hdmitx.*plug ?(?:in|out)\b|HDMI.*hot ?plug|\bhpd\b.*(?:low|high|changed)/i);
+    // only the HDMI driver's own lines: the eARC driver logs the same event again ("HDMITX cable is plugout"),
+    // and every boot has one plugout/plugin pair
+    const ev = find(d, sysSec(d), l => /hdmitx: .*\bplug ?(?:in|out)\b/.test(l) || /HDMI.*hot ?plug|\bhpd\b.*(?:low|high|changed)/i.test(l));
     return ev.count >= 6 && found('warn', ev, 'Many HDMI connect/disconnect events ({0}×).',
       'The TV or receiver keeps dropping the HDMI connection. Try another HDMI cable or input, and avoid switches or adapters in between.');
+  } },
+  { cat: 'hardware', check: d => {
+    // CEC (TV remote and power on/off over HDMI): libCEC can't open the adapter, or its messages go unanswered.
+    // Adapter failures only count in the current Kodi log: a one-off in the previous session is usually gone after a restart.
+    const open = find(d, 'Kodi Log', /could not open(?:ing)? a connection to the CEC adapter|failed to find a free logical address/i);
+    const notSent = find(d, KODI, /CecLogMessage - .*\bnot sent\b/);
+    return [
+      open.count && { sev: 'warn', text: T('Kodi could not connect to the CEC adapter ({0}×).', open.count), ev: open,
+        hint: T('CEC lets the TV remote control Kodi and turns the devices on and off. Check that CEC is on in the TV and in any soundbar or receiver (Anynet+, SimpLink, Bravia Sync …). Unplugging the TV and the other HDMI devices from power for a minute often resets it.') },
+      notSent.count >= 50 && { sev: 'warn', text: T('Many CEC messages could not be sent ({0}×).', notSent.count), ev: notSent,
+        hint: T('The TV or another HDMI device does not answer CEC. Check the CEC settings on the TV and on any soundbar or receiver in between, and try another HDMI input.') },
+    ];
   } },
   { cat: 'hardware', check: d => {
     const ev = find(d, 'Pi config-user', /^\s*(?:arm_freq|over_voltage\w*|core_freq|gpu_freq|sdram_freq|h264_freq|v3d_freq|force_turbo)\s*=/i);
@@ -864,9 +902,13 @@ const RULES = [
       const desc = g('description') || '', wh = /(\d+)x(\d+)/.exec(desc);
       if (!wh) continue;
       const num = tag => parseFloat(g(tag));
-      const full = [`${wh[1]}x${wh[2]}`, '1280x720', '1920x1080', '3840x2160'];
+      // 3D modes use half the height or width (720x480 → 720x240, 1920x2160 → pixel ratio 0.5), so the
+      // pixel ratio is only checked for 16:9 modes
+      const w = +wh[1], h = +wh[2];
+      const full = [`${w}x${h}`, `${w}x${h / 2}`, `${w / 2}x${h}`, '1280x720', '1920x1080', '3840x2160'];
       const shifted = num('left') || num('top') || (g('right') && g('bottom') && !full.includes(`${num('right')}x${num('bottom')}`));
-      if (shifted || (+wh[1] >= 1280 && g('pixelratio') && Math.abs(num('pixelratio') - 1) > 0.001)) custom.push(desc);
+      const wide = w >= 1280 && Math.abs(w / h - 16 / 9) < 0.02;
+      if (shifted || (wide && g('pixelratio') && Math.abs(num('pixelratio') - 1) > 0.001)) custom.push(desc);
     }
     if (!custom.length) return;
     return { sev: 'info', text: T('Custom video calibration (overscan or pixel ratio) for: {0}.', custom.join(', ')),
@@ -918,6 +960,12 @@ const RULES = [
       hint: T('If the picture is black or stutters for the first seconds, set Settings → System → Display → Pause during refresh rate change to 2–4 seconds, so the TV has time to lock on to the new mode.'),
       ev: find(d, 'guisettings.xml', /"videoscreen\.delayrefreshchange"/) };
   } },
+  { cat: 'display', check: d => {
+    // Vero's decoder logs "DOLBY ERROR: meta(…) -> parser process fail" and "-> metadata parser process fail" per frame; count one of them
+    const ev = find(d, sysSec(d), /DOLBY ERROR: .*-> metadata parser process fail/);
+    return ev.count >= 20 && found('info', ev, 'The video decoder reported Dolby Vision metadata errors ({0}×).',
+      'The Dolby Vision data in a file could not be read, which can give wrong colours or brightness. Usually a problem with that file (for example a converted DV file). If it happens with all Dolby Vision files, ask on the OSMC forum with this log.');
+  } },
   { cat: 'display', check: d => d.dvCap && /Support mode/.test(d.dvCap) && { sev: 'ok', text: T('The connected display reports Dolby Vision support.') } },
   { cat: 'display', check: d => d.kodi && d.kodi.playbacks.some(p => p.dovi) && { sev: 'ok', text: T('{0} playback(s) with Dolby Vision in the Kodi log.', d.kodi.playbacks.filter(p => p.dovi).length) } },
 
@@ -929,7 +977,7 @@ const RULES = [
     const hasAC3 = /AC-?3/i.test(capTxt), hasDDP = /Digital\+|E-?AC-?3|ATMOS/i.test(capTxt), hasMAT = /MAT|TrueHD/i.test(capTxt), hasDTS = /DTS/i.test(capTxt);
     const out = [];
     if (ab['Allow passthrough'] === 'false' && (hasAC3 || hasDDP || hasMAT || hasDTS))
-      out.push({ sev: 'warn', text: T('Passthrough is disabled, but the connected device reports support for: {0}.', d.audioCap.map(r => r[0]).filter(f => !/^PCM/i.test(f)).join(', ')),
+      out.push({ sev: 'warn', text: T('Passthrough is disabled, but the connected device reports support for: {0}.', d.audioCap.map(r => r[0]).filter(f => !/^(PCM|OneBitAudio)/i.test(f)).join(', ')),
         hint: T('Turn on passthrough under Settings → System → Audio to send Dolby and DTS to the receiver unchanged.') });
     if (ab['Allow passthrough'] === 'true') {
       const miss = [];
@@ -959,6 +1007,12 @@ const RULES = [
         hint: T('See the start details under Kodi log → Playbacks. Long buffering points to the network or the source, late frames to A/V sync at the start. A log where the same file is resumed instead of started from the beginning is a useful comparison.'),
         ev: { hits: [hit(p.line), ...(st.avLine != null ? [hit(st.avLine)] : [])], count: st.avLine != null ? 2 : 1 } };
     });
+  } },
+
+  { cat: 'playback', check: d => {
+    const ev = find(d, KODI, /ActiveAE - large audio sync error/);
+    return ev.count >= 3 && found('info', ev, 'Large audio sync errors during playback ({0}×).',
+      'Kodi had to correct a large gap between sound and picture, which can be heard as a drop-out or seen as a jump. It often comes from the source (network, damaged file) or from audio settings such as passthrough.');
   } },
 
   // --- updates & packages ---
@@ -1002,8 +1056,9 @@ const RULES = [
     ? { sev: 'ok', text: T('Debug logging is enabled, so the Kodi log has full detail.') }
     : { sev: 'info', text: T('Debug logging is off.'), hint: T('For troubleshooting: enable it under Settings → System → Logging, reproduce the problem and make a new log with grab-logs -A.') }) },
   { cat: 'log', check: d => {
-    // sections grab-logs failed to collect ("boot cmdline" always fails on Vero devices, so it is ignored)
-    const errSecs = d.log.sections.filter(s => /^An error occurred while grabbing/m.test(s.text) && s.name !== 'boot cmdline');
+    // sections grab-logs failed to collect ("boot cmdline" always fails on Vero devices, and a file that doesn't
+    // exist, like advancedsettings.xml on most systems, is not an error)
+    const errSecs = d.log.sections.filter(s => /^An error occurred while grabbing/m.test(s.text) && s.name !== 'boot cmdline' && !/No such file or directory/.test(s.text));
     return errSecs.length && { sev: 'info', text: T('grab-logs could not collect: {0}.', errSecs.map(s => s.name).join(', ')) };
   } },
   { cat: 'log', check: d => {
@@ -1070,7 +1125,7 @@ function render(log, fileName, fileSize) {
   const bannedMatches = matchBanned(allAddons);
   // parsed data shared by the tabs and the problem rules
   const d = {
-    log, uname, cmd, kodi,
+    log, uname, cmd, kodi, oldKodi,
     abridged: parseAbridged(S('GUI Settings (abridged)')),
     gui: parseGuiSettings(S('guisettings.xml')),
     df: parseDf(S('Diskspace')),
