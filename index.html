@@ -433,6 +433,8 @@ function parseKodiLog(t) {
   }
   return entries;
 }
+// Time of a Kodi log entry in ms (for durations between entries).
+const kodiMs = e => Date.parse(`${e.date}T${e.time}`);
 // Walks the Kodi log entries once and collects everything the page shows:
 //   levels        count per log level           info        version, platform, skin, cache settings …
 //   addons        Map id -> version             groups      errors/warnings grouped by message
@@ -471,11 +473,37 @@ function analyzeKodi(entries) {
     }
 
     // playback tracking: everything between VideoPlayer::OpenFile and CVideoPlayer::CloseFile belongs to that
-    // playback (file path, ffmpeg stream info, Dolby Vision record, display mode switch, audio sink setup)
+    // playback (file path, ffmpeg stream info, Dolby Vision record, display mode switch, audio sink setup).
+    // st collects how the playback started (times in ms since the epoch; most need debug logging, the
+    // sync and late-frame figures also need component logging for "A/V sync" and "Video"):
+    //   lost/reset   display lost and back for a refresh rate switch     hdmi      "Detected HDMI switch" (Vero) until 5 s after av
+    //   cacheFrom/To buffering before playback starts                     av        first picture (OnAVStarted)
+    //   pos          start position in seconds (0 = from the beginning)  resync    clock reset at start, ms
+    //   syncErr      largest audio sync error in the first 5 s, ms       late      late frames in the first 5 s (maxLate: most frames behind)
+    //   renders      render checks seen in the first 5 s (0 = no video component logging)   drops   frames dropped by the decoder
     if ((m = /^VideoPlayer::OpenFile: (.*)$/.exec(msg))) {
-      pb = { start: e.date + ' ' + e.time.slice(0, 8), url: m[1], streams: [], dovi: null, res: null, dv: null, audio: [] };
+      pb = { start: e.date + ' ' + e.time.slice(0, 8), url: m[1], streams: [], dovi: null, res: null, dv: null, audio: [],
+        t0: kodiMs(e), line: e.line, st: { hdmi: 0, late: 0, maxLate: 0, renders: 0, drops: 0 } };
       a.playbacks.push(pb);
     } else if (pb) {
+      const st = pb.st, t = kodiMs(e), early = st.av != null && t - st.av < 5000;
+      if (msg.startsWith('VideoPlayer: OnLostDisplay received')) st.lost ??= t;
+      else if (msg.startsWith('VideoPlayer: OnResetDisplay received')) st.reset ??= t;
+      else if (msg.startsWith('CWinSystemAmlogic: Detected HDMI switch')) { if (st.av == null || early) st.hdmi++; }
+      else if ((m = /^CVideoPlayer::SetCaching - caching state (\d)/.exec(msg))) {
+        if (+m[1]) st.cacheFrom ??= t;
+        else if (st.cacheFrom != null) st.cacheTo ??= t;
+      }
+      else if (msg.startsWith('OnAVStarted:') && st.av == null) { st.av = t; st.avLine = e.line; }
+      else if ((m = /^VideoPlayer::Sync - Video - pts: (-?[\d.]+)/.exec(msg))) st.pos ??= Math.max(0, +m[1] / 1e6);
+      else if ((m = /^CVideoPlayerAudio - CDVDMsg::GENERAL_RESYNC\((-?[\d.]+)\)/.exec(msg))) st.resync ??= +m[1] / 1000;
+      else if ((m = /^ActiveAE::SyncStream - average error of (-?[\d.]+), start adjusting/.exec(msg)) && early) st.syncErr = Math.max(st.syncErr || 0, Math.abs(+m[1]));
+      else if ((m = /^PrepareNextRender: .*\blate: (-?\d+)/.exec(msg)) && early) {
+        st.renders++;
+        if (+m[1] > 0) { st.late++; st.maxLate = Math.max(st.maxLate, +m[1]); }
+      }
+      else if (/releaseFrame idx:\d+, drop:1/.test(msg)) st.drops++;
+
       if (!pb.file && (m = /^CFileCache::Open - <(.+?)> opening/.exec(msg))) pb.file = m[1];
       else if ((m = /^ffmpeg\[[^\]]+\]:\s+Stream #\d+:\d+(\(\w+\))?: (Video|Audio): (.*)$/.exec(msg))) pb.streams.push({ kind: m[2], lang: (m[1] || '').replace(/[()]/g, ''), desc: m[3] });
       else if ((m = /^ffmpeg\[[^\]]+\]:\s+Stream #\d+:\d+(\(\w+\))?: Subtitle: (.*)$/.exec(msg))) pb.subs = (pb.subs || 0) + 1;
@@ -504,6 +532,23 @@ function analyzeKodi(entries) {
   }
   a.devices = [...devMap.values()];
   return a;
+}
+// kv() rows describing how a playback started (see pb.st in analyzeKodi). Rows without data are left out by kv().
+// link(line, html) makes a link to a line of the Kodi log, used for the first-picture time.
+const secs = ms => `${(ms / 1000).toFixed(1)} s`;
+function startRows(p, link) {
+  const st = p.st;
+  const sync = [st.resync != null && T('clock reset by {0} ms', Math.round(st.resync)), st.syncErr != null && T('audio off by up to {0} ms', Math.round(st.syncErr))].filter(Boolean);
+  const disp = [st.lost != null && st.reset != null && T('display back after {0}', secs(st.reset - st.lost)), st.hdmi && T('{0} HDMI re-sync(s)', st.hdmi)].filter(Boolean);
+  return [
+    [T('Start position'), st.pos == null ? '' : st.pos < 5 ? T('from the beginning') : T('resumed at {0}', new Date(st.pos * 1000).toISOString().slice(11, 19))],
+    [T('Refresh rate switch'), disp.join(', ')],
+    [T('Buffering at start'), st.cacheFrom != null && st.cacheTo != null ? secs(st.cacheTo - st.cacheFrom) : ''],
+    [T('Time to first picture'), st.av != null ? raw(link(st.avLine, esc(secs(st.av - p.t0)))) : ''],
+    [T('A/V sync at start'), sync.join(', ')],
+    [T('Late frames at start'), st.renders ? (st.late ? T('{0} in the first 5 s (up to {1} frames behind)', st.late, st.maxLate) : '0') : ''],
+    [T('Dropped frames'), st.drops || ''],
+  ];
 }
 // Short video description for a playback: "hevc 3840x2160 24 fps" plus an HDR label.
 function summarizeVideo(p) {
@@ -669,7 +714,7 @@ const fmtDate = s => s ? new Date(s).toLocaleString(lang === 'da' ? 'da-DK' : 'e
 // problem categories in display order: id -> English label
 const CATS = {
   addons: 'Add-ons', shares: 'Network shares', network: 'Network', crashes: 'Crashes & errors', storage: 'Storage & memory',
-  hardware: 'Hardware & power', display: 'Display', audio: 'Audio', updates: 'Updates & packages', database: 'Database', log: 'About the log',
+  hardware: 'Hardware & power', display: 'Display', audio: 'Audio', playback: 'Playback', updates: 'Updates & packages', database: 'Database', log: 'About the log',
 };
 const SEV_ORDER = { bad: 0, warn: 1, info: 2, ok: 3 };
 const reEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -810,14 +855,18 @@ const RULES = [
     'Kodi only found 640x480: the display modes of the TV could not be read ({0}×).',
     'Check the HDMI cable and turn the TV or receiver on before this device. An AV receiver or HDMI switch in between can hide the modes of the TV.') },
   { cat: 'display', check: d => {
-    // video calibration per resolution: overscan other than the full screen, or a pixel ratio other than 1
+    // video calibration per resolution: overscan other than the full screen, or a changed pixel ratio.
+    // The full screen is the mode's own size or the GUI size (4K modes are stored in 1080p GUI coordinates),
+    // and SD modes (720x480, 640x480 …) have a non-square pixel ratio by default, so only HD modes are checked for it.
     const gs = d.log.sec('guisettings.xml'), custom = [];
     for (const [, r] of gs.matchAll(/<resolution>([\s\S]*?)<\/resolution>/g)) {
       const g = tag => (new RegExp(`<${tag}>([^<]*)</${tag}>`).exec(r) || [])[1];
       const desc = g('description') || '', wh = /(\d+)x(\d+)/.exec(desc);
+      if (!wh) continue;
       const num = tag => parseFloat(g(tag));
-      const shifted = num('left') || num('top') || (wh && ((g('right') && num('right') !== +wh[1]) || (g('bottom') && num('bottom') !== +wh[2])));
-      if (shifted || (g('pixelratio') && Math.abs(num('pixelratio') - 1) > 0.001)) custom.push(desc);
+      const full = [`${wh[1]}x${wh[2]}`, '1280x720', '1920x1080', '3840x2160'];
+      const shifted = num('left') || num('top') || (g('right') && g('bottom') && !full.includes(`${num('right')}x${num('bottom')}`));
+      if (shifted || (+wh[1] >= 1280 && g('pixelratio') && Math.abs(num('pixelratio') - 1) > 0.001)) custom.push(desc);
     }
     if (!custom.length) return;
     return { sev: 'info', text: T('Custom video calibration (overscan or pixel ratio) for: {0}.', custom.join(', ')),
@@ -860,6 +909,15 @@ const RULES = [
       hint: kms ? T('OSMC uses the KMS display driver (vc4-kms-v3d), which ignores many of these older settings or lets them conflict with the display settings in Kodi.')
         : T('Forced display settings can stop Kodi from using the display modes of the TV.'), ev };
   } },
+  { cat: 'display', check: d => {
+    // refresh rate switching on, no pause for it, and the log shows the display actually switching during a playback
+    const g = id => (d.gui.find(s => s.id === id) || {}).value;
+    if (!+g('videoplayer.adjustrefreshrate') || g('videoscreen.delayrefreshchange') == null || +g('videoscreen.delayrefreshchange')) return;
+    if (!d.kodi || !d.kodi.playbacks.some(p => p.st.lost != null || p.st.hdmi)) return;
+    return { sev: 'info', text: T('The display switches refresh rate when playback starts, but “Pause during refresh rate change” is off.'),
+      hint: T('If the picture is black or stutters for the first seconds, set Settings → System → Display → Pause during refresh rate change to 2–4 seconds, so the TV has time to lock on to the new mode.'),
+      ev: find(d, 'guisettings.xml', /"videoscreen\.delayrefreshchange"/) };
+  } },
   { cat: 'display', check: d => d.dvCap && /Support mode/.test(d.dvCap) && { sev: 'ok', text: T('The connected display reports Dolby Vision support.') } },
   { cat: 'display', check: d => d.kodi && d.kodi.playbacks.some(p => p.dovi) && { sev: 'ok', text: T('{0} playback(s) with Dolby Vision in the Kodi log.', d.kodi.playbacks.filter(p => p.dovi).length) } },
 
@@ -884,6 +942,23 @@ const RULES = [
     if (ab['Number of channels'] && parseFloat(ab['Number of channels']) <= 2 && maxCh > 2)
       out.push({ sev: 'info', text: T('Number of channels is set to {0}, but the device reports up to {1} channels.', ab['Number of channels'], maxCh) });
     return out;
+  } },
+
+  // --- playback ---
+  { cat: 'playback', check: d => {
+    // slow start (more than 5 s to the first picture) or many late frames just after it; see startRows()
+    const s = d.log.byName['Kodi Log'];
+    if (!d.kodi || !s) return;
+    return d.kodi.playbacks.map(p => {
+      const st = p.st, slow = st.av != null && st.av - p.t0 > 5000, late = st.late > 10;
+      if (!slow && !late) return null;
+      const what = [slow && T('{0} until the first picture', secs(st.av - p.t0)), late && T('{0} late frames at the start', st.late)].filter(Boolean);
+      const name = (p.file || decodeURIComponent(p.url.split('?')[0])).split('/').pop();
+      const hit = line => ({ sec: 'Kodi Log', line, n: s.startLine + line, text: s.lines[line] });
+      return { sev: 'info', text: T('Slow or uneven start of “{0}”: {1}.', name, what.join(', ')),
+        hint: T('See the start details under Kodi log → Playbacks. Long buffering points to the network or the source, late frames to A/V sync at the start. A log where the same file is resumed instead of started from the beginning is a useful comparison.'),
+        ev: { hits: [hit(p.line), ...(st.avLine != null ? [hit(st.avLine)] : [])], count: st.avLine != null ? 2 : 1 } };
+    });
   } },
 
   // --- updates & packages ---
@@ -1328,7 +1403,10 @@ function render(log, fileName, fileSize) {
     h += card(T('Errors and warnings'), table([T('Level'), T('Count'), T('First'), T('Last'), T('Message')], grp.map(g => [raw(badge(g.level, g.level === 'warning' ? 'warn' : 'bad')), g.count,
       raw(lineLink(g.firstLine, esc(g.first))), raw(lineLink(g.lastLine, esc(g.last))), raw(lineLink(g.firstLine, `<span class="mono">${esc(g.msg)}</span>`))]), { scroll: true }),
       esc(T('grouped, incl. “Skipped N duplicate messages” · click to show in Raw sections')));
-    h += card(T('Playbacks'), k.playbacks.length ? k.playbacks.map(p => {
+    // the sync and late-frame figures need component logging; say so when the log has none
+    const noComp = k.playbacks.length && !k.playbacks.some(p => p.st.renders);
+    h += card(T('Playbacks'), (noComp ? `<p class="muted" style="margin:0 0 8px">${esc(T('For A/V sync details at the start of each playback: enable debug logging and component logging for “A/V sync” and “Video” (Settings → System → Logging), then make a new log.'))}</p>` : '')
+      + (k.playbacks.length ? k.playbacks.map(p => {
       const title = p.file || decodeURIComponent(p.url.split('?')[0]);
       return `<div class="pb"><div class="t">${esc(title.split('/').pop() || title)}</div>
         <div class="muted mono" style="overflow-wrap:anywhere">${esc(title)}</div>${kv([
@@ -1336,8 +1414,9 @@ function render(log, fileName, fileSize) {
           ...p.streams.map(s => [s.kind === 'Video' ? T('Video') : `${T('Audio')}${s.lang ? ' (' + s.lang + ')' : ''}`, s.desc]),
           [T('Subtitles'), p.subs], [T('Dolby Vision'), p.dovi], [T('DV codec'), p.dv], [T('Display mode'), p.res],
           [T('Audio output'), p.audio.length ? p.audio.join(' · ') : ''],
+          ...startRows(p, lineLink),
         ])}</div>`;
-    }).join('') : `<p class="empty">${T('No playbacks in the log.')}</p>`);
+    }).join('') : `<p class="empty">${T('No playbacks in the log.')}</p>`));
     const bm = new Map(bannedMatches.map(m => [m.id, m]));
     // banned/suspect add-ons first, then alphabetical
     const addonRows = [...k.addons].sort((a, b) => (bm.has(b[0]) - bm.has(a[0])) || a[0].localeCompare(b[0]));
