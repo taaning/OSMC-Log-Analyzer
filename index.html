@@ -31,7 +31,8 @@
     read a new log section  use log.sec('Section name') inside render(); the name is the one between
                             the ===== markers in the log
     add a check             add a rule to RULES (see the comment above it); its findings show up in the
-                            Problems tab and the overview
+                            Problems tab and the overview. Run test.html afterwards to see what changed in
+                            the findings of the example logs.
     add a tab               build an HTML string in render() and call addTab(id, T('label'), html)
 -->
 <html lang="en">
@@ -1216,13 +1217,10 @@ function harmlessTable(groups, headers, cells, opts) {
 }
 
 // ---------- rendering ----------
-// Builds the whole result view from a parsed log. It is called again on a language switch, after the banned list
-// is updated and when a problem category or "Show known harmless messages" is switched, so it must only depend on
-// its arguments and global state (lang, banned, activeTab, klLog and the settings in localStorage).
-// Order: parse the sections -> build each tab as an HTML string -> insert the tabs -> wire up the interactive
-// parts (search fields, checkboxes, selects), which need the elements to exist in the page first.
-function render(log, fileName, fileSize) {
-  const S = log.sec;   // S('Section name') -> section text
+// Parsed data shared by the tabs and the problem rules (the `d` the rules get). Also used by test.html, which
+// runs the rules on the example logs without drawing the page.
+function buildData(log) {
+  const S = log.sec;
   const uname = parseUname(S('UNAME'));
   const cmd = parseCmdline(S('cmdline'));
   const kodiEntries = parseKodiLog(S('Kodi Log'));
@@ -1239,10 +1237,8 @@ function render(log, fileName, fileSize) {
       allAddons.set(id, a);
     }
   }
-  const bannedMatches = matchBanned(allAddons);
-  // parsed data shared by the tabs and the problem rules
-  const d = {
-    log, uname, cmd, kodi, oldKodi,
+  return {
+    log, uname, cmd, kodiEntries, kodi, oldEntries, oldKodi, allAddons,
     abridged: parseAbridged(S('GUI Settings (abridged)')),
     gui: parseGuiSettings(S('guisettings.xml')),
     df: parseDf(S('Diskspace')),
@@ -1251,8 +1247,19 @@ function render(log, fileName, fileSize) {
     audioCap: parseAudioCap(S('Audio Cap')),
     dvCap: S('Dolby Vision Cap'),
     edid: parseEdid(S('EDID')),
-    bannedMatches,
+    bannedMatches: matchBanned(allAddons),
   };
+}
+
+// Builds the whole result view from a parsed log. It is called again on a language switch, after the banned list
+// is updated and when a problem category or "Show known harmless messages" is switched, so it must only depend on
+// its arguments and global state (lang, banned, activeTab, klLog and the settings in localStorage).
+// Order: parse the sections -> build each tab as an HTML string -> insert the tabs -> wire up the interactive
+// parts (search fields, checkboxes, selects), which need the elements to exist in the page first.
+function render(log, fileName, fileSize) {
+  const S = log.sec;   // S('Section name') -> section text
+  const d = buildData(log);
+  const { uname, cmd, kodiEntries, kodi, oldEntries, oldKodi, allAddons, bannedMatches } = d;
   // device name and OSMC version come from the Kodi log ("Running on OSMC Vero V with Open Source Media Center 2026.05-2");
   // without a Kodi log the device is guessed from osmcdev= on the kernel command line.
   // On a Raspberry Pi, Kodi just says "BCM2835", so the kernel's "Machine model:" line is used instead.

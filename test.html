@@ -1,0 +1,140 @@
+<!doctype html>
+<!--
+  OSMC Log Analyzer – findings test (local development only, not part of the page)
+  ==================================================================================
+  Runs the problem rules of index.html on every log in eksempel-logs/ and compares the findings with a saved
+  baseline (eksempel-logs/findings.json), so a change to one rule can't change another rule's findings unnoticed.
+
+  How it works
+    index.html is loaded in a hidden frame and its own functions are used (parseLog, buildData, problems), in
+    English. Each log is also drawn once with render(), so an error anywhere in the page shows up too.
+    The log list comes from the directory listing of eksempel-logs/ (python -m http.server makes one).
+
+  Use
+    1. Serve the folder (python -m http.server 8765) and open http://localhost:8765/test.html
+    2. Differences from the baseline are listed per log. When they are intended (a new or improved rule),
+       click "Save as new baseline" and put the downloaded findings.json in eksempel-logs/.
+
+  eksempel-logs/ (and so the baseline, which contains host names and addresses) is never committed or deployed.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OSMC Log Analyzer – findings test</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>Findings test</h1>
+  <span class="file" id="status">Loading…</span>
+  <span class="spacer"></span>
+  <button id="run" disabled>Run again</button>
+  <button id="save" disabled>Save as new baseline</button>
+</header>
+<main id="out"></main>
+<iframe id="app" src="index.html" hidden></iframe>
+<script>
+'use strict';
+const BASELINE = 'eksempel-logs/findings.json';
+const out = document.getElementById('out'), status = document.getElementById('status');
+const runBtn = document.getElementById('run'), saveBtn = document.getElementById('save');
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+let current = null;   // findings of the last run: { log name: [finding lines] }
+
+// The page in the frame, ready with its banned add-ons list and switched to English.
+async function app() {
+  const f = document.getElementById('app');
+  if (!f.contentWindow.render) await new Promise(r => f.addEventListener('load', r, { once: true }));
+  const w = f.contentWindow;
+  await w.eval('Promise.all([bannedReady, langReady])');
+  w.eval("lang = 'en'");
+  w.alert = () => {};
+  return w;
+}
+
+// Log files in eksempel-logs/, from the server's directory listing.
+async function logNames() {
+  const html = await fetch('eksempel-logs/', { cache: 'no-store' }).then(r => r.text());
+  return [...new DOMParser().parseFromString(html, 'text/html').querySelectorAll('a')]
+    .map(a => decodeURIComponent(a.getAttribute('href'))).filter(n => /\.(txt|log)$/i.test(n)).sort();
+}
+
+// One finding as a line of text: "warn  hardware  Many HDMI connect/disconnect events (22×).  [22 lines]"
+const line = f => `${f.sev.padEnd(4)}  ${f.cat.padEnd(8)}  ${f.text}${f.ev ? `  [${f.ev.count} lines]` : ''}`;
+
+// Runs the rules on one log; rule and page errors are returned as lines starting with "ERROR".
+async function check(w, name) {
+  const errors = [];
+  const oe = w.console.error;
+  w.console.error = (...a) => errors.push('ERROR  rule failed: ' + a.slice(2).map(String).join(' '));
+  try {
+    const buf = await fetch('eksempel-logs/' + encodeURIComponent(name), { cache: 'no-store' }).then(r => r.arrayBuffer());
+    const log = w.parseLog(w.fixMojibake(new TextDecoder('utf-8').decode(buf)));
+    const found = w.problems(w.buildData(log)).map(line);
+    try { w.render(log, name, buf.byteLength); } catch (e) { errors.push('ERROR  page failed: ' + e.message); }
+    return [...errors, ...found];
+  } catch (e) {
+    return [...errors, 'ERROR  ' + e.message];
+  } finally {
+    w.console.error = oe;
+  }
+}
+
+// Lines only in a, compared as lists (a finding can appear more than once).
+function minus(a, b) {
+  const left = [...b];
+  return a.filter(x => { const i = left.indexOf(x); if (i < 0) return true; left.splice(i, 1); return false; });
+}
+
+async function run() {
+  runBtn.disabled = saveBtn.disabled = true;
+  out.innerHTML = '';
+  status.textContent = 'Running…';
+  const w = await app();
+  const base = await fetch(BASELINE, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null);
+  const names = await logNames();
+  current = {};
+  for (const [i, n] of names.entries()) {
+    status.textContent = `Running ${i + 1} of ${names.length}: ${n}`;
+    current[n] = await check(w, n);
+  }
+
+  const all = [...new Set([...names, ...Object.keys(base || {})])].sort();
+  let changed = 0, html = '';
+  for (const n of all) {
+    const now = current[n], was = base && base[n];
+    const gone = now ? minus(was || [], now) : null, added = was ? minus(now || [], was) : null;
+    const errors = (now || []).filter(l => l.startsWith('ERROR'));
+    let body;
+    if (!now) body = `<p class="muted">In the baseline, but the log is missing from eksempel-logs/.</p>`;
+    else if (!was) body = `<p class="muted">New log, not in the baseline.</p>`;
+    else if (gone.length || added.length) body = (gone.length ? `<h4>No longer found</h4>${lines(gone, 'bad')}` : '') + (added.length ? `<h4>New</h4>${lines(added, 'warn')}` : '');
+    else if (errors.length) body = lines(errors, 'bad');
+    if (body) changed++;
+    html += `<details${body ? ' open' : ''}><summary><span class="name">${esc(n)}</span>
+      ${body ? `<span class="badge warn">changed</span>` : `<span class="badge ok">same</span>`} <span class="muted">${(now || was).length} findings</span></summary>
+      <div class="body">${body || ''}${lines(now || was, '')}</div></details>`;
+  }
+  out.innerHTML = (!base ? `<section class="card"><p>No baseline yet (${esc(BASELINE)}). Check the findings below and save them as the baseline.</p></section>`
+    : `<ul class="obs" style="margin-bottom:16px"><li class="${changed ? 'warn' : 'ok'}">${changed ? `${changed} of ${all.length} logs differ from the baseline.` : `All ${all.length} logs match the baseline.`}</li></ul>`) + html;
+  status.textContent = `${names.length} logs · baseline ${base ? 'loaded' : 'missing'}`;
+  document.title = changed ? `✗ ${changed} changed – findings test` : '✓ findings test';
+  runBtn.disabled = saveBtn.disabled = false;
+}
+// Finding lines as a .lines block; cls colours them (bad = removed, warn = new).
+const lines = (list, cls) => list.length ? `<div class="lines"${cls ? ` style="color:var(--${cls})"` : ''}>${list.map(l => `<div>${esc(l)}</div>`).join('')}</div>` : '';
+
+// Downloads the last run as findings.json, to be put in eksempel-logs/.
+saveBtn.onclick = () => {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(current, null, 2)], { type: 'application/json' }));
+  a.download = 'findings.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+runBtn.onclick = run;
+run();
+</script>
+</body>
+</html>
