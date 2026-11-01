@@ -13,7 +13,8 @@
 //   text  what was found          hint  what to do about it (optional)
 //   ev    evidence from find(): { hits: [{ sec, line, n, text }], count } (optional)
 // Many patterns are problems that OSMC forum helpers often point out in users' logs.
-// To add a check: add a rule to RULES and its texts to lang/en.json and lang/da.json.
+// To add a check: add a rule to RULES and its texts to lang/en.json and lang/da.json. A check that only counts
+// matching lines is written as data with simple() (see below); one that needs more logic is a check function.
 
 // problem categories in display order: id -> English label
 const CATS = {
@@ -52,6 +53,24 @@ function find(d, secs, test, max = 50, perEntry = false) {
 }
 // finding from a find() result: nothing if no lines matched; text/hint get the number of matches as {0}
 const found = (sev, ev, text, hint) => ev.count ? { sev, text: T(text, ev.count), hint: hint && T(hint), ev } : null;
+
+// A simple check written as data instead of code: count the lines that match and report them with their count.
+// simple(def) turns it into a rule; def stays on the rule (rule.def).
+//   cat, sev   category and severity of the finding
+//   in         sections to search: section names, 'kodi' (current and previous Kodi log) and/or 'system'
+//              (the system journal, or the kernel log when there is no journal)
+//   match      a regex, or a list of regexes of which one must match
+//   not        lines that also match this regex don't count (optional)
+//   kodiError  only Kodi log lines logged at error level or worse count (optional)
+//   min        fewest matching lines for a finding (default 1)
+//   perEntry   count a log entry with continuation lines once (see find())
+//   text, hint English texts (keys in lang/*.json); {0} is the number of matching lines
+const simple = def => ({ cat: def.cat, def, check: d => {
+  const secs = [].concat(def.in).flatMap(s => s === 'kodi' ? KODI : s === 'system' ? [sysSec(d)] : [s]);
+  const res = [].concat(def.match).map(re => def.kodiError ? kodiErr(re) : re);
+  const ev = find(d, secs, l => res.some(re => re.test(l)) && !(def.not && def.not.test(l)), 50, def.perEntry);
+  return ev.count >= (def.min || 1) && found(def.sev, ev, def.text, def.hint);
+} });
 
 // Kodi's view modes (defaultvideosettings/viewmode)
 const VIEWMODES = ['Normal', 'Zoom', 'Stretch 4:3', 'Wide zoom', 'Stretch 16:9', 'Original size', 'Custom', 'Stretch 16:9 (non-linear)', 'Zoom 120% width', 'Zoom 110% width'];
@@ -100,17 +119,25 @@ const RULES = [
     return { sev: 'bad', text: why.length ? T('Kodi could not open SMB (Windows) shares ({0}×): {1}.', ev.count, why.join('; ')) : T('Kodi could not open SMB (Windows) shares ({0}×).', ev.count),
       hint: T('Check the share path, user name and password. Newer NAS and Windows servers need SMB2 or SMB3: check the minimum and maximum protocol under Settings → Services → SMB client.'), ev };
   } },
-  { cat: 'shares', check: d => found('bad', find(d, KODI, kodiErr(/\bNFS\b|nfs:\/\//i)), 'Kodi could not use NFS shares ({0}×).',
-    'Check that the server is running, that the export path is right and that the export allows the IP address of this device.') },
-  { cat: 'shares', check: d => found('warn', find(d, sysSec(d), /mount error\(\d+\)|failed to parse mount options|CIFS:? VFS: .*(?:error|fail)|Failed to mount|mount\.(?:nfs4?|cifs): |nfs: server \S+ not responding|autofs.*(?:error|fail)/i),
-    'Errors when mounting file systems ({0}×).', 'Check the mounts in fstab and autofs (see Sources & storage), and that the server is on before this device starts.') },
+  simple({ cat: 'shares', sev: 'bad', in: 'kodi', kodiError: true, match: /\bNFS\b|nfs:\/\//i,
+    text: 'Kodi could not use NFS shares ({0}×).',
+    hint: 'Check that the server is running, that the export path is right and that the export allows the IP address of this device.' }),
+  simple({ cat: 'shares', sev: 'warn', in: 'system',
+    match: /mount error\(\d+\)|failed to parse mount options|CIFS:? VFS: .*(?:error|fail)|Failed to mount|mount\.(?:nfs4?|cifs): |nfs: server \S+ not responding|autofs.*(?:error|fail)/i,
+    text: 'Errors when mounting file systems ({0}×).',
+    hint: 'Check the mounts in fstab and autofs (see Sources & storage), and that the server is on before this device starts.' }),
 
   // --- network ---
-  { cat: 'network', check: d => found('warn', find(d, KODI, l => kodiErr(/Software caused connection abort|Connection reset by peer|Connection timed out|Operation timed out|Network is unreachable|No route to host/i).test(l) && !/SMB|NFS/i.test(l)),
-    'Network connection errors in the Kodi log ({0}×).', 'The connection to a server was lost, often during playback. Check cables, the Wi-Fi signal and the server. A wired connection is more reliable.') },
+  // (errors on SMB and NFS shares are the network shares rules above)
+  simple({ cat: 'network', sev: 'warn', in: 'kodi', kodiError: true, not: /SMB|NFS/i,
+    match: /Software caused connection abort|Connection reset by peer|Connection timed out|Operation timed out|Network is unreachable|No route to host/i,
+    text: 'Network connection errors in the Kodi log ({0}×).',
+    hint: 'The connection to a server was lost, often during playback. Check cables, the Wi-Fi signal and the server. A wired connection is more reliable.' }),
   // (counted once per log entry: a Python traceback repeats the same DNS error on several lines)
-  { cat: 'network', check: d => found('warn', find(d, [...KODI, sysSec(d)], /Could(?:n't| not) resolve|Failed to resolve|Unable to lookup host|Name or service not known|Temporary failure in name resolution/i, 50, true),
-    'Name lookup (DNS) errors ({0}×).', 'Server names or internet addresses could not be looked up. Check the DNS server in the network settings, or use IP addresses for shares.') },
+  simple({ cat: 'network', sev: 'warn', in: ['kodi', 'system'], perEntry: true,
+    match: /Could(?:n't| not) resolve|Failed to resolve|Unable to lookup host|Name or service not known|Temporary failure in name resolution/i,
+    text: 'Name lookup (DNS) errors ({0}×).',
+    hint: 'Server names or internet addresses could not be looked up. Check the DNS server in the network settings, or use IP addresses for shares.' }),
   { cat: 'network', check: d => {
     // TV (PVR) add-ons that can't log in to or reach their backend, e.g. "AddOnLog: pvr.hts: Command authenticate failed: Access denied"
     const ev = find(d, KODI, kodiErr(/AddOnLog: pvr\.[\w.]+: .*(?:authenticat\w* failed|Access denied|Login failed|unable to connect|connection refused|failed to connect)/i));
@@ -130,8 +157,9 @@ const RULES = [
     text: T('Network errors on {0}: RX {1}, TX {2}.', i.name, i.rxErr, i.txErr), hint: T('Errors on a network interface often mean a bad cable, port or Wi-Fi signal.') })) },
 
   // --- crashes & errors ---
-  { cat: 'crashes', check: d => found('bad', find(d, sysSec(d), /segfault at|status=(?:11\/SEGV|7\/BUS|6\/ABRT)|SIGSEGV|SIGBUS|core dumped|code=dumped/i),
-    'Signs of a program crash ({0}×).', 'If it is Kodi (kodi.bin), a recently installed add-on or skin is a common cause. Crashes during updates can point to a weak power supply or a failing SD card.') },
+  simple({ cat: 'crashes', sev: 'bad', in: 'system', match: /segfault at|status=(?:11\/SEGV|7\/BUS|6\/ABRT)|SIGSEGV|SIGBUS|core dumped|code=dumped/i,
+    text: 'Signs of a program crash ({0}×).',
+    hint: 'If it is Kodi (kodi.bin), a recently installed add-on or skin is a common cause. Crashes during updates can point to a weak power supply or a failing SD card.' }),
   { cat: 'crashes', check: d => [[d.kodi, 'Kodi Log', 'The Kodi log has {0} repeats of the error: “{1}”.'],
     [d.oldKodi, 'Kodi Old Log', 'The previous Kodi log has {0} repeats of the error: “{1}”.']].map(([k, sec, text]) => {
     // the most repeated error in each Kodi log (the counts include "Skipped N duplicate messages")
@@ -147,26 +175,32 @@ const RULES = [
   { cat: 'storage', check: d => d.df.filter(df => df.pct >= 85 && !/^(tmpfs|devtmpfs)$/.test(df.fs)).map(df => ({ sev: df.pct >= 95 ? 'bad' : 'warn',
     text: T('{0} is {1}% full ({2} free).', df.mnt, df.pct, df.avail), hint: df.mnt === '/' ? T('A full system disk can stop updates and stop Kodi from saving its library and thumbnails.') : '' })) },
   { cat: 'storage', check: d => d.mem.Mem && d.mem.Mem.avail / d.mem.Mem.total < 0.1 && { sev: 'warn', text: T('Low available memory: {0} MB of {1} MB.', d.mem.Mem.avail, d.mem.Mem.total) } },
-  { cat: 'storage', check: d => found('bad', find(d, sysSec(d), /Out of memory: Killed process|Memory cgroup out of memory/i),
-    'The system ran out of memory and stopped a program ({0}×).', 'Often caused by an add-on or a large cache setting (cache memory size in advancedsettings.xml or under Settings → Services → Caching).') },
+  simple({ cat: 'storage', sev: 'bad', in: 'system', match: /Out of memory: Killed process|Memory cgroup out of memory/i,
+    text: 'The system ran out of memory and stopped a program ({0}×).',
+    hint: 'Often caused by an add-on or a large cache setting (cache memory size in advancedsettings.xml or under Settings → Services → Caching).' }),
   // (a FAT volume that "was not properly unmounted" is the unclean-shutdown rule below, not a disk error)
-  { cat: 'storage', check: d => found('bad', find(d, sysSec(d), l => /EXT4-fs error|EXT4-fs \([^)]*\): (?:error|warning)|Buffer I\/O error|I\/O error, dev|blk_update_request: I\/O error|FAT-fs \([^)]*\): .*(?:error|corrupt)|Remounting filesystem read-only|remounted read-only/i.test(l) && !/not properly unmounted/i.test(l)),
-    'File system or disk errors ({0}×).', 'The SD card, eMMC or USB disk may be failing or was not removed safely. Back up your data, check the disk and replace the SD card if the errors return.') },
-  { cat: 'storage', check: d => found('info', find(d, sysSec(d), /not properly unmounted|was not cleanly unmounted|recovery complete|needs? fsck/i),
-    'A disk was not shut down cleanly ({0}×).', 'Usually after a power cut or a USB disk that was pulled out. Shut down from the power menu, and check the disk if errors follow.') },
+  simple({ cat: 'storage', sev: 'bad', in: 'system', not: /not properly unmounted/i,
+    match: /EXT4-fs error|EXT4-fs \([^)]*\): (?:error|warning)|Buffer I\/O error|I\/O error, dev|blk_update_request: I\/O error|FAT-fs \([^)]*\): .*(?:error|corrupt)|Remounting filesystem read-only|remounted read-only/i,
+    text: 'File system or disk errors ({0}×).',
+    hint: 'The SD card, eMMC or USB disk may be failing or was not removed safely. Back up your data, check the disk and replace the SD card if the errors return.' }),
+  simple({ cat: 'storage', sev: 'info', in: 'system', match: /not properly unmounted|was not cleanly unmounted|recovery complete|needs? fsck/i,
+    text: 'A disk was not shut down cleanly ({0}×).',
+    hint: 'Usually after a power cut or a USB disk that was pulled out. Shut down from the power menu, and check the disk if errors follow.' }),
 
   // --- hardware & power ---
-  { cat: 'hardware', check: d => found('bad', find(d, sysSec(d), /Under-?voltage detected/i),
-    'Under-voltage detected ({0}×).', 'The power supply is too weak or its cable too thin. Use the official power supply, and power USB disks through a powered hub.') },
-  { cat: 'hardware', check: d => found('warn', find(d, sysSec(d), /usb \S+: (?:device descriptor read\/\S+, error|device not accepting address|unable to enumerate|can't set config|Cannot enable)|over-current/i),
-    'USB errors ({0}×).', 'A USB device is not responding properly. Try another port or cable. USB disks may need more power (a powered hub).') },
-  { cat: 'hardware', check: d => {
-    // only the HDMI driver's own lines: the eARC driver logs the same event again ("HDMITX cable is plugout"),
-    // and every boot has one plugout/plugin pair
-    const ev = find(d, sysSec(d), l => /hdmitx: .*\bplug ?(?:in|out)\b/.test(l) || /HDMI.*hot ?plug|\bhpd\b.*(?:low|high|changed)/i.test(l));
-    return ev.count >= 6 && found('warn', ev, 'Many HDMI connect/disconnect events ({0}×).',
-      'The TV or receiver keeps dropping the HDMI connection. Try another HDMI cable or input, and avoid switches or adapters in between.');
-  } },
+  simple({ cat: 'hardware', sev: 'bad', in: 'system', match: /Under-?voltage detected/i,
+    text: 'Under-voltage detected ({0}×).',
+    hint: 'The power supply is too weak or its cable too thin. Use the official power supply, and power USB disks through a powered hub.' }),
+  simple({ cat: 'hardware', sev: 'warn', in: 'system',
+    match: /usb \S+: (?:device descriptor read\/\S+, error|device not accepting address|unable to enumerate|can't set config|Cannot enable)|over-current/i,
+    text: 'USB errors ({0}×).',
+    hint: 'A USB device is not responding properly. Try another port or cable. USB disks may need more power (a powered hub).' }),
+  // only the HDMI driver's own lines (case-sensitive "hdmitx:"): the eARC driver logs the same event again
+  // ("HDMITX cable is plugout"), and every boot has one plugout/plugin pair
+  simple({ cat: 'hardware', sev: 'warn', in: 'system', min: 6,
+    match: [/hdmitx: .*\bplug ?(?:in|out)\b/, /HDMI.*hot ?plug|\bhpd\b.*(?:low|high|changed)/i],
+    text: 'Many HDMI connect/disconnect events ({0}×).',
+    hint: 'The TV or receiver keeps dropping the HDMI connection. Try another HDMI cable or input, and avoid switches or adapters in between.' }),
   { cat: 'hardware', check: d => {
     // The Vero V's built-in remote receiver (USB 2017:xxxx "OSMC Remote Controller" / "OSMC RF Remote") sits on an
     // internal USB hub (usb 1-1). Only flagged when the log shows the devices were scanned: Kodi registered its
@@ -207,9 +241,9 @@ const RULES = [
     if (ab && /^Off/i.test(ab.value)) return { sev: 'warn', text: T('Adjust display refresh rate is off. Films at 23.976/24 fps may stutter.'),
       hint: T('Turn it on under Settings → System → Display → Adjust display refresh rate (“On start/stop”).') };
   } },
-  { cat: 'display', check: d => found('warn', find(d, KODI, l => /RES_DESKTOP/.test(l) && /640x480/.test(l)),
-    'Kodi only found 640x480: the display modes of the TV could not be read ({0}×).',
-    'Check the HDMI cable and turn the TV or receiver on before this device. An AV receiver or HDMI switch in between can hide the modes of the TV.') },
+  simple({ cat: 'display', sev: 'warn', in: 'kodi', match: /RES_DESKTOP.*640x480|640x480.*RES_DESKTOP/,
+    text: 'Kodi only found 640x480: the display modes of the TV could not be read ({0}×).',
+    hint: 'Check the HDMI cable and turn the TV or receiver on before this device. An AV receiver or HDMI switch in between can hide the modes of the TV.' }),
   { cat: 'display', check: d => {
     // video calibration per resolution: overscan other than the full screen, or a changed pixel ratio.
     // The full screen is the mode's own size or the GUI size (4K modes are stored in 1080p GUI coordinates),
@@ -278,12 +312,10 @@ const RULES = [
       hint: T('If the picture is black or stutters for the first seconds, set Settings → System → Display → Pause during refresh rate change to 2–4 seconds, so the TV has time to lock on to the new mode.'),
       ev: find(d, 'guisettings.xml', /"videoscreen\.delayrefreshchange"/) };
   } },
-  { cat: 'display', check: d => {
-    // Vero's decoder logs "DOLBY ERROR: meta(…) -> parser process fail" and "-> metadata parser process fail" per frame; count one of them
-    const ev = find(d, sysSec(d), /DOLBY ERROR: .*-> metadata parser process fail/);
-    return ev.count >= 20 && found('info', ev, 'The video decoder reported Dolby Vision metadata errors ({0}×).',
-      'The Dolby Vision data in a file could not be read, which can give wrong colours or brightness. Usually a problem with that file (for example a converted DV file). If it happens with all Dolby Vision files, ask on the OSMC forum with this log.');
-  } },
+  // Vero's decoder logs "DOLBY ERROR: meta(…) -> parser process fail" and "-> metadata parser process fail" per frame; count one of them
+  simple({ cat: 'display', sev: 'info', in: 'system', min: 20, match: /DOLBY ERROR: .*-> metadata parser process fail/,
+    text: 'The video decoder reported Dolby Vision metadata errors ({0}×).',
+    hint: 'The Dolby Vision data in a file could not be read, which can give wrong colours or brightness. Usually a problem with that file (for example a converted DV file). If it happens with all Dolby Vision files, ask on the OSMC forum with this log.' }),
   { cat: 'display', check: d => d.dvCap && /Support mode/.test(d.dvCap) && { sev: 'ok', text: T('The connected display reports Dolby Vision support.') } },
   { cat: 'display', check: d => d.kodi && d.kodi.playbacks.some(p => p.dovi) && { sev: 'ok', text: T('{0} playback(s) with Dolby Vision in the Kodi log.', d.kodi.playbacks.filter(p => p.dovi).length) } },
 
@@ -327,11 +359,9 @@ const RULES = [
     });
   } },
 
-  { cat: 'playback', check: d => {
-    const ev = find(d, KODI, /ActiveAE - large audio sync error/);
-    return ev.count >= 3 && found('info', ev, 'Large audio sync errors during playback ({0}×).',
-      'Kodi had to correct a large gap between sound and picture, which can be heard as a drop-out or seen as a jump. It often comes from the source (network, damaged file) or from audio settings such as passthrough.');
-  } },
+  simple({ cat: 'playback', sev: 'info', in: 'kodi', min: 3, match: /ActiveAE - large audio sync error/,
+    text: 'Large audio sync errors during playback ({0}×).',
+    hint: 'Kodi had to correct a large gap between sound and picture, which can be heard as a drop-out or seen as a jump. It often comes from the source (network, damaged file) or from audio settings such as passthrough.' }),
   { cat: 'playback', check: d => [[d.kodi, 'Kodi Log'], [d.oldKodi, 'Kodi Old Log']].flatMap(([k, sec]) => {
     // jumps in the video timestamps the decoder reports (needs component logging for "Video"); see analyzeKodi()
     const s = d.log.byName[sec];
@@ -356,17 +386,18 @@ const RULES = [
     return ev.count > 2 && { sev: 'warn', text: T('{0} kernels are installed: {1}.', ev.count, ev.hits.map(h => h.text.split(/\s+/)[1].replace(/:\w+$/, '')).join(', ')),
       hint: T('Normally only the newest one or two are needed. Old kernels can fill up the boot partition and make updates fail.'), ev };
   } },
+  simple({ cat: 'updates', sev: 'warn', in: 'APT history.log', match: /^Commandline: .*\bapt(?:-get)?\s+(?:-\S+\s+)*upgrade\b/,
+    text: 'APT history shows {0} run(s) of “apt upgrade”.',
+    hint: 'OSMC should be updated with My OSMC or “sudo apt-get dist-upgrade”. A plain “upgrade” can leave the system partly updated.' }),
+  simple({ cat: 'updates', sev: 'warn', in: 'APT history.log', match: /^Error: /,
+    text: 'Errors in the APT history ({0}×).',
+    hint: 'An update failed. Update again with My OSMC and check that there is enough free space.' }),
   { cat: 'updates', check: d => {
     const runs = parseAptHistory(d.log.sec('APT history.log'));
-    const plain = /^Commandline: .*\bapt(?:-get)?\s+(?:-\S+\s+)*upgrade\b/;
-    const out = [found('warn', find(d, 'APT history.log', plain), 'APT history shows {0} run(s) of “apt upgrade”.',
-      'OSMC should be updated with My OSMC or “sudo apt-get dist-upgrade”. A plain “upgrade” can leave the system partly updated.')];
-    out.push(found('warn', find(d, 'APT history.log', /^Error: /), 'Errors in the APT history ({0}×).', 'An update failed. Update again with My OSMC and check that there is enough free space.'));
     const created = Date.parse((d.log.created || '').slice(0, 10)), last = runs[0] && Date.parse(runs[0].start.slice(0, 10));
     const days = created && last ? Math.round((created - last) / 864e5) : 0;
-    if (days > 180) out.push({ sev: 'info', text: T('The last update in the APT history was {0} ({1} days before the log was made).', runs[0].start.slice(0, 10), days),
-      hint: T('Update with My OSMC → Updater. Many problems are already fixed in newer versions.') });
-    return out;
+    if (days > 180) return { sev: 'info', text: T('The last update in the APT history was {0} ({1} days before the log was made).', runs[0].start.slice(0, 10), days),
+      hint: T('Update with My OSMC → Updater. Many problems are already fixed in newer versions.') };
   } },
 
   // --- database ---
