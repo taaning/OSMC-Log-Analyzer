@@ -1,7 +1,7 @@
 # Revalidate on every load so updates show up without a forced reload
 # (needs mod_headers; without it the rule is skipped instead of giving a server error)
 <IfModule mod_headers.c>
-    <FilesMatch "\.(html|css|json)$">
+    <FilesMatch "\.(html|css|js|json)$">
         Header set Cache-Control "no-cache"
     </FilesMatch>
 </IfModule>

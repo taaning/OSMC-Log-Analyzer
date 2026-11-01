@@ -62,14 +62,15 @@ The page uses a copy of the list stored on the server (`banned-wiki.json`). The 
 
 | File | Purpose |
 | --- | --- |
-| `index.html` | Markup and all JavaScript |
+| `index.html` | Markup |
+| `js/*.js` | The JavaScript: helpers, log parsers, banned add-ons, checks, tabs, start-up |
 | `style.css` | All styling, including dark mode |
 | `lang/en.json`, `lang/da.json` | UI texts in English and Danish |
 | `banned-wiki.json` | Server copy of Kodi's banned add-ons list |
-| `.htaccess` | Makes browsers revalidate HTML, CSS and JSON so updates show without a forced reload (Apache) |
+| `.htaccess` | Makes browsers revalidate HTML, CSS, JavaScript and JSON so updates show without a forced reload (Apache) |
 | `test.html` | Findings test for development (see below); not needed on the web server |
 
-There is no build step and there are no dependencies.
+There is no build step and there are no dependencies: the scripts are plain files loaded in order by `index.html`.
 
 ## Hosting
 
@@ -85,7 +86,7 @@ Then open <http://localhost:8765>.
 
 ## Development
 
-The comment at the top of `index.html` describes how the script is organised and how to:
+The comment at the top of `index.html` describes what each script file holds and how to:
 
 - add a translated text
 - read a new log section
