@@ -68,7 +68,6 @@ The page uses a copy of the list stored on the server (`banned-wiki.json`). The 
 | `lang/en.json`, `lang/da.json` | UI texts in English and Danish |
 | `banned-wiki.json` | Server copy of Kodi's banned add-ons list |
 | `.htaccess` | Makes browsers revalidate HTML, CSS, JavaScript and JSON so updates show without a forced reload (Apache) |
-| `test.html` | Findings test for development (see below); not needed on the web server |
 
 There is no build step and there are no dependencies: the scripts are plain files loaded in order by `index.html`.
 
@@ -94,11 +93,3 @@ The comment at the top of `index.html` describes what each script file holds and
 - add a tab
 
 New texts are written in English in the code as `T('English text')`, and the same key is added to `lang/en.json` and `lang/da.json`. A missing key just shows the English text.
-
-### Findings test
-
-`test.html` runs the checks on every log in a local `eksempel-logs/` folder and compares the findings with a saved baseline (`eksempel-logs/findings.json`), so a change to one check can't change another check's findings unnoticed. Each log is also drawn once, so an error anywhere in the page shows up too.
-
-1. Put real logs (`.txt` or `.log`) in `eksempel-logs/`. The folder is not in the repository, because logs contain private data such as IP addresses and host names.
-2. Serve the folder as above and open <http://localhost:8765/test.html>. It needs the directory listing that `python -m http.server` makes.
-3. Every log that differs from the baseline is listed with the findings that are new or no longer found. When the change is intended, click **Save as new baseline** and put the downloaded `findings.json` in `eksempel-logs/`.
