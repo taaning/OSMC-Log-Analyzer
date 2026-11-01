@@ -408,5 +408,7 @@
   "Only known harmless messages.": "Only known harmless messages.",
   "The Vero V’s built-in remote receiver was not found.": "The Vero V’s built-in remote receiver was not found.",
   "The internal USB hub it is connected to is missing as well.": "The internal USB hub it is connected to is missing as well.",
-  "The OSMC remote won’t work until it is found. Unplug the Vero from power for a minute and start it again; if it is still missing, ask on the OSMC forum with this log, as it can be a hardware fault. CEC (the TV remote) works in the meantime.": "The OSMC remote won’t work until it is found. Unplug the Vero from power for a minute and start it again; if it is still missing, ask on the OSMC forum with this log, as it can be a hardware fault. CEC (the TV remote) works in the meantime."
+  "The OSMC remote won’t work until it is found. Unplug the Vero from power for a minute and start it again; if it is still missing, ask on the OSMC forum with this log, as it can be a hardware fault. CEC (the TV remote) works in the meantime.": "The OSMC remote won’t work until it is found. Unplug the Vero from power for a minute and start it again; if it is still missing, ask on the OSMC forum with this log, as it can be a hardware fault. CEC (the TV remote) works in the meantime.",
+  "On": "On",
+  "Off": "Off"
 }

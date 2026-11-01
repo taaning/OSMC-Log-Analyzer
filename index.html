@@ -1243,6 +1243,7 @@ function render(log, fileName, fileSize) {
   let html = '<div class="stats">' + [
     [T('Device'), device], ['OSMC', osmcVer], ['Kodi', kodi && kodi.info.version], [T('Hostname'), uname.host],
     [T('IP address'), eth && eth.inet], [T('Uptime'), log.uptime != null ? fmtDuration(log.uptime) : ''],
+    [T('Debug logging'), kodi ? T(kodi.debugLogging ? 'On' : 'Off') : ''],
   ].filter(x => x[1]).map(([l, v]) => `<div class="stat"><div class="l">${esc(l)}</div><div class="v">${esc(v)}</div></div>`).join('') + '</div>';
   html += card(T('Observations'), (shown.length ? '<ul class="obs">' + shown.map(f => `<li class="${f.sev}">${esc(f.text)}</li>`).join('') + '</ul>' : `<p class="empty">${T('Nothing notable found.')}</p>`)
     + `<p class="muted" style="margin:8px 0 0"><a href="#" data-goto="problems">${esc(T('Advice and log lines under Problems →'))}</a></p>`,
