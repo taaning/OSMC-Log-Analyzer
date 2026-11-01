@@ -57,7 +57,7 @@ tr:last-child td, tr:last-child th { border-bottom: none; }
 .tw { overflow-x: auto; }
 table.fixed { table-layout: fixed; min-width: 520px; }
 table.fixed td { vertical-align: middle; }
-tr.grp th { background: var(--code-bg); color: var(--text); font-weight: 600; font-size: 12.5px; padding: 6px 8px; border-left: none; }
+tr.grp th { background: var(--code-bg); color: var(--text); font-weight: 600; font-size: 12.5px; padding: 6px 8px; }
 tr.grp:not(:first-child) th { border-top: 10px solid var(--panel); }
 .scroll { max-height: 520px; overflow: auto; }
 code, pre, .mono { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 12.5px; }
@@ -69,13 +69,12 @@ pre { background: var(--code-bg); padding: 10px; border-radius: 6px; overflow: a
 .badge.acc { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
 .chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .obs { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
-.obs li { padding: 8px 12px; border-radius: 8px; border-left: 4px solid; }
+.obs li { padding: 8px 12px; border-radius: 8px; border-left: 4px solid; min-width: 0; }
 .obs li.warn { background: var(--warn-soft); border-color: var(--warn); }
 .obs li.info { background: var(--accent-soft); border-color: var(--accent); }
 .obs li.bad { background: var(--bad-soft); border-color: var(--bad); }
 .obs li.ok { background: var(--ok-soft); border-color: var(--ok); }
 /* Problems tab: advice under each finding, and the log lines that triggered it */
-.obs li { min-width: 0; }
 .obs .hint { color: var(--muted); font-size: 13px; margin-top: 2px; }
 .obs .lines { margin-top: 8px; max-height: 260px; }
 /* the folded-out lines ("Show N more lines") are at most 45 (find() keeps 50), so show them all without scrolling */

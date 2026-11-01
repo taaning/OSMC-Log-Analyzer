@@ -22,7 +22,7 @@ The interface is available in English and Danish (the **EN / DA** buttons). The 
 | **Sources & storage** | Media sources, active network mounts and disk space |
 | **Display & audio** | The TV/receiver's EDID (supported modes, HDR, Dolby Vision, audio formats), current display mode, user display overrides, Kodi's audio settings and passthrough formats, resolution changes |
 | **System** | Hardware and network, OSMC and Debian packages, APT sources and history, kernel and system journal errors and warnings (known harmless messages hidden) |
-| **Kodi log** | Errors grouped and counted, known harmless messages hidden (click one to jump to its line in Raw sections), playbacks with how each one started (refresh rate switch, buffering, time to first picture, A/V sync and late frames at the start) and installed add-ons |
+| **Kodi log** | Errors grouped and counted, known harmless messages hidden (click one to jump to its line in Raw sections), playbacks with how each one started (refresh rate switch, buffering, time to first picture, A/V sync and late frames at the start) and jumps in their video timestamps, and installed add-ons |
 | **Raw sections** | Each section of the log file as it is, with a search across the whole log, for anything the other tabs don't cover |
 
 ### Known harmless messages
@@ -43,12 +43,12 @@ The page checks the log for common problems, many of them ones that helpers on t
 | **Hardware & power** | Under-voltage, USB errors, HDMI connection drops, CEC adapter and message failures, overclocking in `config-user.txt` |
 | **Display** | Refresh rate adjustment off, refresh rate switches without a pause for the TV, only 640x480 found, custom video calibration, changed default view (zoom/stretch), skin zoom, display settings in `config-user.txt`, Dolby Vision support and metadata errors |
 | **Audio** | Passthrough off although the TV/receiver supports it, formats not enabled, too few channels |
-| **Playback** | Playbacks that take more than 5 seconds to show a picture or have many late frames at the start, large audio sync errors |
+| **Playback** | Playbacks that take more than 5 seconds to show a picture or have many late frames at the start, large audio sync errors, jumps in a file's video timestamps (Vero) |
 | **Updates & packages** | Packages not fully installed, many old kernels, `apt upgrade` instead of `dist-upgrade`, APT errors, no updates for a long time |
 | **Database** | MySQL/MariaDB connection errors and damaged databases |
 | **About the log** | Debug logging off, sections `grab-logs` could not collect, a cut-off log file |
 
-Most playback details need debug logging in Kodi; the A/V sync and late-frame figures also need component logging for **A/V sync** and **Video** (Settings → System → Logging).
+Most playback details need debug logging in Kodi; the A/V sync and late-frame figures and the timestamp jumps also need component logging for **A/V sync** and **Video** (Settings → System → Logging).
 
 The checks are hints, not a diagnosis: a finding is not always the cause of a problem, and not every problem is detected.
 
