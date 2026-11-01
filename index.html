@@ -40,7 +40,8 @@
     add a tab               build an HTML string in render() and call addTab(id, T('label'), html)
     add a script file       add a <script src> before main.js below, and to the copy step on the server
 -->
-<html lang="en">
+<!-- data-theme: the page always starts dark; the light/dark button in the header switches it (main.js) -->
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -52,11 +53,12 @@
   Static texts carry their translation key in data-i18n (plain text) or data-i18n-html (may contain markup);
   applyLang() replaces their content with the text for the current language.
 -->
-<!-- Sticky header: title, file info, language switch, reload button and (after loading) the tab bar -->
+<!-- Sticky header: title, file info, light/dark switch, language switch, reload button and (after loading) the tab bar -->
 <header>
   <h1 data-i18n="OSMC Log Analyzer">OSMC Log Analyzer</h1>
   <span class="file" id="fileinfo"></span>
   <span class="spacer"></span>
+  <button id="theme" class="icon"></button>
   <span class="langsw" id="langsw"><button data-lang="en">EN</button><button data-lang="da">DA</button></span>
   <button id="reload" hidden data-i18n="Load another log">Load another log</button>
   <input type="file" id="file" accept=".log,.txt,text/plain" hidden>

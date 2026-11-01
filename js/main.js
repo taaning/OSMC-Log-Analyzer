@@ -15,6 +15,7 @@ function applyLang() {
   document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = T(el.dataset.i18n); });
   document.querySelectorAll('[data-i18n-html]').forEach(el => { el.innerHTML = T(el.dataset.i18nHtml); });
   document.querySelectorAll('#langsw button').forEach(b => b.classList.toggle('active', b.dataset.lang === lang));
+  showTheme();
   if (current) render(current.log, current.name, current.size); else document.title = T('OSMC Log Analyzer');
 }
 // DA/EN buttons: load the language file first, then switch and remember the choice.
@@ -26,6 +27,22 @@ document.getElementById('langsw').onclick = async e => {
   try { localStorage.setItem('osmclog.lang', lang); } catch {}
   applyLang();
 };
+
+// ---------- light/dark ----------
+// The page always starts dark (data-theme on <html>); the button switches to light and back for this visit.
+// It shows the mode it switches to: a sun in dark mode, a moon in light mode.
+const themeBtn = document.getElementById('theme');
+function showTheme() {
+  const dark = document.documentElement.dataset.theme === 'dark';
+  themeBtn.textContent = dark ? '☀' : '☾';
+  themeBtn.title = T(dark ? 'Switch to light mode' : 'Switch to dark mode');
+  themeBtn.setAttribute('aria-label', themeBtn.title);
+}
+themeBtn.onclick = () => {
+  document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  showTheme();
+};
+showTheme();
 
 // ---------- loading ----------
 const drop = document.getElementById('drop'), fileIn = document.getElementById('file');

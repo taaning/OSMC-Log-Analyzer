@@ -12,7 +12,10 @@
     --mark: #5c4d00;
   }
 }
+/* the light/dark button sets data-theme; color-scheme makes scrollbars and form controls follow it */
+:root[data-theme="light"] { color-scheme: light; }
 :root[data-theme="dark"] {
+  color-scheme: dark;
   --bg: #12151b; --panel: #1b1f27; --text: #e5e7eb; --muted: #9aa3b2; --border: #2c323d;
   --accent: #6c9cff; --accent-soft: #1f2b45; --code-bg: #151920;
   --ok: #4ade80; --ok-soft: #15291d; --warn: #fbbf24; --warn-soft: #2e2512; --bad: #f87171; --bad-soft: #321a1a;
@@ -26,6 +29,8 @@ header .file { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
 header .spacer { flex: 1; }
 button, .btn { font: inherit; border: 1px solid var(--border); background: var(--panel); color: var(--text); border-radius: 6px; padding: 5px 12px; cursor: pointer; }
 button:hover, .btn:hover { border-color: var(--accent); }
+/* light/dark button: a sun or moon, as tall as the other header buttons */
+button.icon { padding: 5px 9px; font-size: 15px; line-height: 1.4; min-width: 34px; }
 .langsw { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
 .langsw button { border: none; border-radius: 0; padding: 5px 10px; font-size: 13px; color: var(--muted); }
 .langsw button.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
