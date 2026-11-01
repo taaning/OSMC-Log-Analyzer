@@ -96,6 +96,8 @@ pre { background: var(--code-bg); padding: 10px; border-radius: 6px; overflow: a
 input[type=search], select { font: inherit; padding: 5px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); min-width: 0; }
 input[type=search] { flex: 1 1 220px; }
 label.chk { display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: 13px; white-space: nowrap; }
+/* the "All" category switch in the Problems tab, set apart from the categories */
+label.chk.all { color: var(--text); font-weight: 600; padding-right: 10px; border-right: 1px solid var(--border); }
 details { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 6px; background: var(--panel); }
 details > summary { cursor: pointer; padding: 7px 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 details > summary .name { font-weight: 600; }

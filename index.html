@@ -1297,7 +1297,10 @@ function render(log, fileName, fileSize) {
 
   // --- Problems tab: category switches, then every finding with advice and the log lines behind it ---
   const worst = list => list.reduce((w, f) => SEV_ORDER[f.sev] < SEV_ORDER[w] ? f.sev : w, 'ok');
-  html = card(T('What to look for'), '<div class="toolbar" style="margin:0">' + Object.entries(CATS).map(([id, label]) => {
+  // the "All" switch comes first; it is half-ticked (set after rendering) when only some categories are on
+  const allOn = !Object.keys(CATS).some(id => off.has(id));
+  html = card(T('What to look for'), '<div class="toolbar" style="margin:0">'
+    + `<label class="chk all"><input type="checkbox" data-cat="*"${allOn ? ' checked' : ''}> ${esc(T('All'))}</label>` + Object.entries(CATS).map(([id, label]) => {
     const fs = allFound.filter(f => f.cat === id);
     return `<label class="chk"><input type="checkbox" data-cat="${id}"${off.has(id) ? '' : ' checked'}> ${esc(T(label))}${fs.length ? ' ' + badge(fs.length, worst(fs)) : ''}</label>`;
   }).join('') + '</div>', esc(T('categories you switch off are hidden here and in the overview, and remembered in this browser')));
@@ -1485,7 +1488,8 @@ function render(log, fileName, fileSize) {
       if (hm) localStorage.setItem('osmclog.harmless', hm.checked ? 'show' : 'hide');
       else {
         const o = catsOff();
-        if (c.checked) o.delete(c.dataset.cat); else o.add(c.dataset.cat);
+        const ids = c.dataset.cat === '*' ? Object.keys(CATS) : [c.dataset.cat];
+        for (const id of ids) if (c.checked) o.delete(id); else o.add(id);
         localStorage.setItem('osmclog.cats.off', JSON.stringify([...o]));
       }
     } catch {}
@@ -1493,6 +1497,8 @@ function render(log, fileName, fileSize) {
     render(log, fileName, fileSize);
     window.scrollTo(0, y);
   };
+  const allChk = panelsEl.querySelector('[data-cat="*"]');
+  if (allChk) allChk.indeterminate = !allOn && Object.keys(CATS).some(id => !off.has(id));
   show(tabs.some(t => t.id === activeTab) ? activeTab : 'overview');
 
   // abridged settings: optional "changed only" filter
