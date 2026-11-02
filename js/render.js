@@ -23,13 +23,16 @@ function buildData(log) {
       allAddons.set(id, a);
     }
   }
+  // network interfaces from ifconfig, or from the system journal when the log has no ifconfig (ifacesFrom says which)
+  let ifaces = parseIfconfig(S('ifconfig')), ifacesFrom = 'ifconfig';
+  if (!ifaces.length) { ifaces = parseJournalNet(S('System Journal')); ifacesFrom = ifaces.length ? 'journal' : ''; }
   return {
     log, uname, cmd, kodiEntries, kodi, oldEntries, oldKodi, allAddons,
     abridged: parseAbridged(S('GUI Settings (abridged)')),
     gui: parseGuiSettings(S('guisettings.xml')),
     df: parseDf(S('Diskspace')),
     mem: parseFree(S('Memory')),
-    ifaces: parseIfconfig(S('ifconfig')),
+    ifaces, ifacesFrom,
     audioCap: parseAudioCap(S('Audio Cap')),
     dvCap: S('Dolby Vision Cap'),
     edid: parseEdid(S('EDID')),
@@ -234,8 +237,13 @@ function render(log, fileName, fileSize) {
   const mb = v => v != null ? v + ' MB' : '';
   html += card(T('Memory'), table(['', T('Total'), T('Used'), T('Free'), T('Cache'), T('Available')],
     Object.entries(d.mem).map(([k, m]) => [k, mb(m.total), mb(m.used), mb(m.free), mb(m.cache), mb(m.avail)])));
-  html += card(T('Network interfaces'), table([T('Interface'), T('Address'), 'MAC', 'RX / TX', T('Errors')],
-    d.ifaces.map(i => [i.name, [i.inet && `${i.inet}/${i.mask}`, i.inet6].filter(Boolean).join('\n'), i.ether || '', `${i.rx || '-'} / ${i.tx || '-'}`, `${i.rxErr || 0} / ${i.txErr || 0}`])));
+  // from the journal there are no traffic or error counters, so those columns are left out
+  const fromJournal = d.ifacesFrom === 'journal';
+  html += card(T('Network interfaces'), fromJournal
+    ? table([T('Interface'), T('Type'), T('Address'), 'MAC'], d.ifaces.map(i => [i.name, i.type || '', i.inet ? `${i.inet}/${i.mask}` : '', i.ether || '']))
+    : table([T('Interface'), T('Address'), 'MAC', 'RX / TX', T('Errors')],
+      d.ifaces.map(i => [i.name, [i.inet && `${i.inet}/${i.mask}`, i.inet6].filter(Boolean).join('\n'), i.ether || '', `${i.rx || '-'} / ${i.tx || '-'}`, `${i.rxErr || 0} / ${i.txErr || 0}`])),
+    fromJournal ? esc(T('from the system journal, as the log has no ifconfig')) : '');
   html += '</div>';
   const aptSrc = [S('APT sources.list'), S('APT sources.list.d')].join('\n').split('\n').filter(l => /^\s*deb/.test(l));
   html += card(T('APT sources'), aptSrc.length ? `<pre>${esc(aptSrc.join('\n'))}</pre>` : `<p class="empty">${esc(T('None'))}</p>`);

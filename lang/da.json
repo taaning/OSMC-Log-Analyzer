@@ -425,5 +425,7 @@
   "The page can’t open paste.osmc.tv links itself. Open {0}, select all the text (Ctrl+A), copy it and paste it here.": "Siden kan ikke selv åbne links til paste.osmc.tv. Åbn {0}, markér al teksten (Ctrl+A), kopiér den, og indsæt den her.",
   "Paste another log": "Indsæt anden log",
   "The browser doesn’t let the page read the clipboard. Copy the log and press Ctrl+V on the page instead.": "Browseren lader ikke siden læse udklipsholderen. Kopiér loggen, og tryk Ctrl+V på siden i stedet.",
-  "The clipboard is empty. Copy the whole log first.": "Udklipsholderen er tom. Kopiér hele loggen først."
+  "The clipboard is empty. Copy the whole log first.": "Udklipsholderen er tom. Kopiér hele loggen først.",
+  "from the system journal, as the log has no ifconfig": "fra systemjournalen, da loggen ikke har ifconfig",
+  "The ifconfig program is missing, so the network details are taken from the system journal where possible. It is part of the net-tools package: sudo apt-get install net-tools": "Programmet ifconfig mangler, så netværksoplysningerne hentes fra systemjournalen, hvor det er muligt. Det er en del af pakken net-tools: sudo apt-get install net-tools"
 }

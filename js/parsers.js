@@ -182,6 +182,41 @@ function parseIfconfig(t) {
     };
   }).filter(i => i.name);
 }
+// Prefix length -> netmask: 24 -> "255.255.255.0".
+const prefixMask = n => Array.from({ length: 4 }, (_, i) => 256 - 2 ** (8 - Math.min(8, Math.max(0, n - 8 * i)))).join('.');
+// "System Journal": network interfaces for logs without ifconfig (some OSMC systems don't have it, and grab-logs
+// then reports "No such file or directory: 'ifconfig'"). ConnMan logs each interface, its MAC address and every
+// IPv4 address it gets or loses:
+//   connmand[2497]: Adding interface eth0 [ ethernet ]
+//   connmand[2497]: eth0 {newlink} index 2 address 94:CC:04:60:10:A5 mtu 1500
+//   connmand[2497]: eth0 {add} address 10.0.10.182/24 label eth0 family 2      ({del} when it is removed)
+// The journal can hold several boots whose lines are mixed when the clock jumped, so only the lines of the last
+// boot (after its "-- Boot <id> --" markers) are used. -> objects like parseIfconfig()'s, without traffic and error
+// counters, wired interfaces first.
+function parseJournalNet(t) {
+  const lines = t.split('\n');
+  const marks = lines.map(l => (/^-- Boot (\w+) --$/.exec(l) || [])[1]).filter(Boolean);
+  const last = marks[marks.length - 1];
+  const ifs = new Map(), get = name => ifs.get(name) || ifs.set(name, { name }).get(name);
+  let boot = null;
+  for (const l of lines) {
+    const b = /^-- Boot (\w+) --$/.exec(l);
+    if (b) { boot = b[1]; continue; }
+    if (last && boot !== last) continue;
+    let m;
+    if ((m = /connmand\[\d+\]: Adding interface (\S+) \[ (\w+) \]/.exec(l))) get(m[1]).type = m[2] === 'wifi' ? 'Wi-Fi' : m[2][0].toUpperCase() + m[2].slice(1);
+    else if ((m = /connmand\[\d+\]: (\S+) \{newlink\} index \d+ address ([0-9A-Fa-f:]{17}) /.exec(l)) && m[1] !== 'lo') {
+      // a VPN tunnel (tun0) has no hardware address and logs 00:00:00:00:00:00
+      if (!/^[0:]+$/.test(m[2])) get(m[1]).ether = m[2].toLowerCase();
+    }
+    else if ((m = /connmand\[\d+\]: (\S+) \{add\} address ([\d.]+)\/(\d+) /.exec(l))) Object.assign(get(m[1]), { inet: m[2], mask: prefixMask(+m[3]) });
+    else if ((m = /connmand\[\d+\]: (\S+) \{del\} address ([\d.]+)\//.exec(l)) && ifs.has(m[1]) && ifs.get(m[1]).inet === m[2]) {
+      delete ifs.get(m[1]).inet; delete ifs.get(m[1]).mask;
+    }
+  }
+  const order = i => /^(eth|en)/.test(i.name) ? 0 : /^wl/.test(i.name) ? 1 : 2;
+  return [...ifs.values()].sort((a, b) => order(a) - order(b));
+}
 // "OSMC Packages" / "All Other Packages" (`dpkg -l`) -> [{ status ('ii' = installed), name, version, arch, desc }].
 function parseDpkg(t) {
   // the header lines ("Desired=…", "||/ Name …", "+++-===…") don't match, as they don't start with 2–3 letters and a space

@@ -416,9 +416,11 @@ const RULES = [
     : { sev: 'info', text: T('Debug logging is off.'), hint: T('For troubleshooting: enable it under Settings → System → Logging, reproduce the problem and make a new log with grab-logs -A.') }) },
   { cat: 'log', check: d => {
     // sections grab-logs failed to collect ("boot cmdline" always fails on Vero devices, and a file that doesn't
-    // exist, like advancedsettings.xml on most systems, is not an error)
-    const errSecs = d.log.sections.filter(s => /^An error occurred while grabbing/m.test(s.text) && s.name !== 'boot cmdline' && !/No such file or directory/.test(s.text));
-    return errSecs.length && { sev: 'info', text: T('grab-logs could not collect: {0}.', errSecs.map(s => s.name).join(', ')) };
+    // exist, like advancedsettings.xml on most systems, is not an error; a missing program, like ifconfig, is)
+    const errSecs = d.log.sections.filter(s => /^An error occurred while grabbing/m.test(s.text) && s.name !== 'boot cmdline' && !/No such file or directory: '\//.test(s.text));
+    const noIfconfig = errSecs.some(s => s.name === 'ifconfig');
+    return errSecs.length && { sev: 'info', text: T('grab-logs could not collect: {0}.', errSecs.map(s => s.name).join(', ')),
+      hint: noIfconfig ? T('The ifconfig program is missing, so the network details are taken from the system journal where possible. It is part of the net-tools package: sudo apt-get install net-tools') : '' };
   } },
   { cat: 'log', check: d => {
     const cut = d.log.sections.filter(s => s.truncated);
