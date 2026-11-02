@@ -1,5 +1,8 @@
 # OSMC Log Analyzer
 
+> [!TIP]
+> **Try it here: [taaning.github.io/OSMC-Log-Analyzer](https://taaning.github.io/OSMC-Log-Analyzer/)**
+
 A single web page that reads an OSMC log file and shows the useful parts in a clear, tabbed view: settings, display and audio capabilities, storage, packages, Kodi log errors, playbacks and banned add-ons.
 
 Everything runs in the browser. The log file is never uploaded anywhere.
