@@ -330,14 +330,18 @@ function render(log, fileName, fileSize) {
     panelsEl.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'p-' + id));
     activeTab = id;
   };
-  tabsEl.onclick = e => { const b = e.target.closest('button'); if (b) { show(b.dataset.tab); window.scrollTo(0, 0); } };
+  // Switching tab by clicking adds a step to the browser history, so Back returns to the previous tab at the place
+  // it was scrolled to (see the history handling in main.js); showTab is what Back and Forward use.
+  const go = id => { saveScroll(); show(id); history.pushState({ tab: id, y: 0 }, ''); };
+  showTab = id => show(tabs.some(t => t.id === id) ? id : 'overview');
+  tabsEl.onclick = e => { const b = e.target.closest('button'); if (b && b.dataset.tab !== activeTab) { go(b.dataset.tab); window.scrollTo(0, 0); } };
   // One click handler for all panels (event delegation), so it survives re-rendering:
   //   data-goto="<tab id>"           link that switches tab (e.g. "See details under Kodi log")
   //   data-sec="<section>" data-line="<n>"   link to line n of a section in the Raw sections tab
   //   data-action="refresh-banned"   the "Update from kodi.wiki" button
   panelsEl.onclick = async e => {
     const a = e.target.closest('[data-goto]');
-    if (a) { e.preventDefault(); show(a.dataset.goto); window.scrollTo(0, 0); return; }
+    if (a) { e.preventDefault(); go(a.dataset.goto); window.scrollTo(0, 0); return; }
     const ln = e.target.closest('[data-line]');
     if (ln) { e.preventDefault(); gotoLine(ln.dataset.sec, +ln.dataset.line); return; }
     const btn = e.target.closest('[data-action="refresh-banned"]');
@@ -484,11 +488,12 @@ function render(log, fileName, fileSize) {
     body.innerHTML = `<div class="lines">${s.lines.map((l, j) => lineHtml(l, s.startLine + j)).join('')}</div>`;
   };
   // Shows line j (0-based) of a section in the Raw sections tab: clears any search, opens the section,
-  // highlights the line and scrolls it into view. Used by the line links in the Problems and Kodi log tabs.
+  // highlights the line and scrolls it into view. Used by the line links in the Problems and Kodi log tabs; Back
+  // returns to the line that was clicked.
   const gotoLine = (name, j) => {
     clearTimeout(rawT);
     if (rawQ.value) { rawQ.value = ''; renderRaw(); }
-    show('raw');
+    go('raw');
     const det = rawOut.querySelector(`details[data-i="${log.sections.indexOf(log.byName[name])}"]`);
     if (!det) return;
     det.open = true; fillRaw(det);

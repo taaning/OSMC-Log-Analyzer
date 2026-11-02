@@ -9,6 +9,21 @@ let current = null;
 let activeTab = 'overview';
 // The Kodi log shown in the Kodi log tab (current or previous), kept when the page is re-rendered.
 let klLog = '';
+
+// ---------- browser history ----------
+// Each tab switch made by a click is a step in the browser history ({ tab, y }), so Back and Forward move between
+// the tabs and return to where each was scrolled. render() sets showTab, which switches tab without a new step.
+let showTab = null;
+// remembers the scroll position in the current history step (also while scrolling, so Forward returns there too)
+const saveScroll = () => { if (current) history.replaceState({ tab: activeTab, y: window.scrollY }, ''); };
+let scrollT;
+window.addEventListener('scroll', () => { clearTimeout(scrollT); scrollT = setTimeout(saveScroll, 150); });
+window.addEventListener('popstate', e => {
+  if (!current || !showTab || !e.state) return;
+  clearTimeout(scrollT);
+  showTab(e.state.tab);
+  window.scrollTo(0, e.state.y || 0);
+});
 // Translates the static texts (data-i18n / data-i18n-html) and re-renders the result view, if any.
 function applyLang() {
   document.documentElement.lang = lang;
@@ -73,7 +88,11 @@ async function loadText(text, name, size) {
     alert(T('Error during analysis: {0}', err.message));
     return;
   }
+  // the first log takes over the start page's history step (so Back from its overview leaves the page); another
+  // log gets a new step on its overview
+  const first = !current;
   current = { log, name, size };
+  history[first ? 'replaceState' : 'pushState']({ tab: 'overview', y: 0 }, '');
   document.getElementById('start').hidden = true;
   document.getElementById('app').hidden = false;
   document.getElementById('tabs').hidden = false;
