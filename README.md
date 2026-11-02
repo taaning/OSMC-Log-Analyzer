@@ -7,6 +7,9 @@ A single web page that reads an OSMC log file and shows the useful parts in a cl
 
 Everything runs in the browser. The log file is never uploaded anywhere.
 
+> [!NOTE]
+> This is an independent project. It is not made, endorsed or supported by OSMC. It started as a personal tool for troubleshooting my own Vero V and is shared in case others find it useful. For help with OSMC itself, please use the [OSMC forum](https://discourse.osmc.tv/).
+
 ## Usage
 
 1. On the OSMC device, create a full log with `grab-logs -A` and save it as a file (for example `osmc.log`).
