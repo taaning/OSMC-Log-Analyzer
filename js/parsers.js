@@ -217,6 +217,31 @@ function parseJournalNet(t) {
   const order = i => /^(eth|en)/.test(i.name) ? 0 : /^wl/.test(i.name) ? 1 : 2;
   return [...ifs.values()].sort((a, b) => order(a) - order(b));
 }
+// How the network is set up, for information (not problems):
+//   link     wired link per interface from the kernel log: { eth0: { speed: '1Gbps', duplex: 'Full', downs } }, where
+//            downs counts "Link is Down" (the kernel log only covers the current boot)
+//   vpn      [{ name, inet, kind }] tunnel interfaces with an address; kind from the journal: WireGuard (wg-quick) or
+//            OpenVPN (openvpn[pid] lines), else ''
+//   vpnAddons, vpnPkgs   installed VPN add-ons and packages beyond OSMC's own (installed is not the same as in use)
+// sysText is the system journal (or kernel log), kernelText the kernel log, pkgs the parseDpkg() rows of both lists.
+function parseNetSetup(kernelText, sysText, ifaces, addonIds, pkgs) {
+  const link = {};
+  for (const l of kernelText.split('\n')) {
+    let m;
+    if ((m = /\s(\w+): Link is Up - (\d+[GM]bps)\/(\w+)/.exec(l))) Object.assign(link[m[1]] ??= { downs: 0 }, { speed: m[2], duplex: m[3] });
+    else if ((m = /\s(\w+): Link is Down/.exec(l))) (link[m[1]] ??= { downs: 0 }).downs++;
+  }
+  const wg = new Set([...sysText.matchAll(/wg-quick\[\d+\]: \[#\] ip link add (\S+) type wireguard/g)].map(m => m[1]));
+  const openvpn = /\bopenvpn\[\d+\]: /.test(sysText);
+  const vpn = ifaces.filter(i => i.inet && /^(tun|tap|wg|ppp)\d+$/.test(i.name))
+    .map(i => ({ name: i.name, inet: i.inet, kind: wg.has(i.name) || /^wg/.test(i.name) ? 'WireGuard' : openvpn && /^(tun|tap)/.test(i.name) ? 'OpenVPN' : '' }));
+  return {
+    link, vpn,
+    vpnAddons: addonIds.filter(id => /vpn|wireguard/i.test(id)),
+    // (openvpn is not listed: it is installed on every OSMC system)
+    vpnPkgs: pkgs.filter(p => p.status === 'ii' && /^(wireguard(-tools)?|openconnect|strongswan|network-manager-openvpn)(:\w+)?$/.test(p.name)).map(p => p.name.replace(/:\w+$/, '')),
+  };
+}
 // "OSMC Packages" / "All Other Packages" (`dpkg -l`) -> [{ status ('ii' = installed), name, version, arch, desc }].
 function parseDpkg(t) {
   // the header lines ("Desired=…", "||/ Name …", "+++-===…") don't match, as they don't start with 2–3 letters and a space

@@ -26,8 +26,11 @@ function buildData(log) {
   // network interfaces from ifconfig, or from the system journal when the log has no ifconfig (ifacesFrom says which)
   let ifaces = parseIfconfig(S('ifconfig')), ifacesFrom = 'ifconfig';
   if (!ifaces.length) { ifaces = parseJournalNet(S('System Journal')); ifacesFrom = ifaces.length ? 'journal' : ''; }
+  const sysText = S('System Journal').trim() ? S('System Journal') : S('Kernel Message Log');
+  const net = parseNetSetup(S('Kernel Message Log') || sysText, sysText, ifaces, [...allAddons.keys()],
+    [...parseDpkg(S('OSMC Packages')), ...parseDpkg(S('All Other Packages'))]);
   return {
-    log, uname, cmd, kodiEntries, kodi, oldEntries, oldKodi, allAddons,
+    log, uname, cmd, kodiEntries, kodi, oldEntries, oldKodi, allAddons, net,
     abridged: parseAbridged(S('GUI Settings (abridged)')),
     gui: parseGuiSettings(S('guisettings.xml')),
     df: parseDf(S('Diskspace')),
@@ -60,6 +63,9 @@ function render(log, fileName, fileSize) {
   const vic = (/VIC:(\d+)/.exec(S('Display Mode')) || [])[1];
   const root = d.df.find(x => x.mnt === '/');
   const eth = d.ifaces.find(i => i.inet && i.name !== 'lo');   // first real network interface with an address
+  // wired link "1Gbps"/"Full" -> "1 Gbps, full duplex"; VPN connections -> "WireGuard tun0 (10.2.0.2)"
+  const linkText = l => l && l.speed ? `${l.speed.replace(/(\d+)([GM])bps/, '$1 $2bps')}, ${T(l.duplex === 'Full' ? 'full duplex' : 'half duplex')}` : '';
+  const vpnText = d.net.vpn.map(v => `${v.kind ? v.kind + ' ' : ''}${v.name} (${v.inet})`).join(', ');
 
   // tabs in display order; id is used for the panel element (p-<id>) and for switching tabs
   const tabs = [];
@@ -103,8 +109,9 @@ function render(log, fileName, fileSize) {
   html += card(T('Hardware & network'), kv([
     [T('Memory'), d.mem.Mem && raw(esc(T('{0} / {1} MB used, {2} MB available', d.mem.Mem.used, d.mem.Mem.total, d.mem.Mem.avail)) + bar(100 * d.mem.Mem.used / d.mem.Mem.total))],
     [T('Root disk'), root && raw(`${esc(root.used)} / ${esc(root.size)} (${root.pct}%)${bar(root.pct)}`)],
-    [T('Network'), eth && `${eth.name} (${eth.type || ''}) ${eth.inet}/${eth.mask}`],
+    [T('Network'), eth && [`${eth.name} (${eth.type || ''}) ${eth.inet}/${eth.mask}`, linkText(d.net.link[eth.name])].filter(Boolean).join(' · ')],
     [T('MAC'), eth && eth.ether],
+    [T('VPN'), vpnText],
   ]));
   html += '</div>';
   // playbacks from both Kodi logs, newest first
@@ -244,6 +251,37 @@ function render(log, fileName, fileSize) {
     : table([T('Interface'), T('Address'), 'MAC', 'RX / TX', T('Errors')],
       d.ifaces.map(i => [i.name, [i.inet && `${i.inet}/${i.mask}`, i.inet6].filter(Boolean).join('\n'), i.ether || '', `${i.rx || '-'} / ${i.tx || '-'}`, `${i.rxErr || 0} / ${i.txErr || 0}`])),
     fromJournal ? esc(T('from the system journal, as the log has no ifconfig')) : '');
+  html += '</div>';
+
+  // network setup (for information) and Kodi's network services, from the kernel log, journal, packages and guisettings.xml
+  const gs = id => (d.gui.find(s => s.id === id) || {}).value;
+  const on = id => gs(id) === 'true';
+  const smbProto = v => ({ 0: T('none'), 1: 'SMBv1', 2: 'SMBv2', 3: 'SMBv3' }[v] ?? v);
+  const proxyTypes = ['HTTP', 'SOCKS4', 'SOCKS4A', 'SOCKS5', 'SOCKS5 (remote DNS)', 'HTTPS'];
+  html += '<div class="grid">';
+  html += card(T('Network setup'), kv([
+    [T('Wired connection'), Object.entries(d.net.link).filter(([, l]) => l.speed).map(([n, l]) =>
+      `${n}: ${linkText(l)}${l.downs ? ' · ' + T('link lost {0}× since start-up', l.downs) : ''}`).join('; ')],
+    [T('VPN connection'), vpnText || T('none found')],
+    [T('VPN add-ons and packages'), [...d.net.vpnAddons, ...d.net.vpnPkgs].join(', ')],
+    [T('HTTP proxy'), gs('network.usehttpproxy') == null ? '' : on('network.usehttpproxy')
+      ? `${proxyTypes[+gs('network.httpproxytype')] || 'HTTP'} ${gs('network.httpproxyserver') || '?'}:${gs('network.httpproxyport') || ''}` : T('Off')],
+    [T('Internet bandwidth limit'), gs('network.bandwidth') == null ? '' : +gs('network.bandwidth') ? `${gs('network.bandwidth')} kbit/s` : T('No limit')],
+    [T('SMB client'), gs('smb.maxprotocol') == null ? '' : [T('minimum {0}, maximum {1}', smbProto(gs('smb.minprotocol')), smbProto(gs('smb.maxprotocol'))),
+      on('smb.legacysecurity') && T('legacy security'), gs('smb.chunksize') && `${T('chunk size')} ${gs('smb.chunksize')} KB`].filter(Boolean).join(', ')],
+  ]), esc(T('for information')));
+  // each service: on/off, with what matters about it
+  const svc = (id, extra) => gs(id) == null ? '' : on(id) ? raw(badge(T('On'), 'acc') + (extra ? ` <span class="muted">${esc(extra)}</span>` : '')) : raw(badge(T('Off')));
+  html += card(T('Kodi network services'), kv([
+    [T('Web server'), svc('services.webserver', [`${T('port')} ${gs('services.webserverport')}`, on('services.webserverssl') && 'HTTPS',
+      !on('services.webserverauthentication') && T('no password')].filter(Boolean).join(', '))],
+    [T('Remote control from apps'), svc('services.esenabled', on('services.esallinterfaces') ? T('also from other devices') : T('only from this device'))],
+    ['UPnP', svc('services.upnp', [on('services.upnpserver') && T('share libraries'), on('services.upnprenderer') && T('receive and play'),
+      on('services.upnpcontroller') && T('control other players')].filter(Boolean).join(', '))],
+    ['AirPlay', svc('services.airplay')],
+    ['Zeroconf', svc('services.zeroconf', T('announces these services on the network'))],
+    ['WS-Discovery', svc('services.wsdiscovery')],
+  ]), 'guisettings.xml');
   html += '</div>';
   const aptSrc = [S('APT sources.list'), S('APT sources.list.d')].join('\n').split('\n').filter(l => /^\s*deb/.test(l));
   html += card(T('APT sources'), aptSrc.length ? `<pre>${esc(aptSrc.join('\n'))}</pre>` : `<p class="empty">${esc(T('None'))}</p>`);
