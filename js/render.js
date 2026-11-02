@@ -160,14 +160,13 @@ function render(log, fileName, fileSize) {
   html = '';
   const srcs = parseSources(S('sources.xml'));
   html += card(T('Media sources'), table([T('Type'), T('Name'), T('Path')], srcs.map(s => [s.type, s.name, raw(s.paths.map(p => `<code>${esc(p)}</code>`).join('<br>'))])), 'sources.xml');
-  html += '<div class="grid">';
+  // fstab and the network mounts have long paths and options, so each gets the full width
   html += card('fstab', table([T('Source'), T('Mount point'), T('Type'), T('Options')], parseFstab(S('fstab')).map(f => [raw(`<code>${esc(f.spec)}</code>`), f.mnt, f.type, raw(`<code>${esc(f.opts)}</code>`)])));
   const netMounts = parseMounts(S('mounts')).filter(m => /^(nfs|nfs4|cifs|smb3|fuse\.sshfs)$/.test(m.type));
   html += card(T('Active network mounts'), table([T('Source'), T('Mount point'), T('Type'), T('Key options')], netMounts.map(m => [
     raw(`<code>${esc(m.spec)}</code>`), m.mnt, m.type,
     m.opts.split(',').filter(o => /^(vers|rsize|wsize|proto|hard|soft|timeo|retrans|sec|username|cache|uid|gid)/.test(o)).join(', '),
   ])), esc(T('from /proc/mounts')));
-  html += '</div>';
   html += card(T('Disk space'), table([T('Filesystem'), T('Size'), T('Used'), T('Free'), T('Use'), T('Mount point')],
     d.df.map(x => [raw(`<code>${esc(x.fs)}</code>`), x.size, x.used, x.avail, raw(`${x.pct}%${bar(x.pct)}`), x.mnt])));
   const adv = parseXml(S('advancedsettings.xml'));
