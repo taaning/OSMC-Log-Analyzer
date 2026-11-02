@@ -68,6 +68,7 @@ The page uses a copy of the list stored on the server (`banned-wiki.json`). The 
 | `lang/en.json`, `lang/da.json` | UI texts in English and Danish |
 | `banned-wiki.json` | Server copy of Kodi's banned add-ons list |
 | `.htaccess` | Makes browsers revalidate HTML, CSS, JavaScript and JSON so updates show without a forced reload (Apache) |
+| `.nojekyll` | Makes GitHub Pages publish the files as they are, without running them through Jekyll |
 
 There is no build step and there are no dependencies: the scripts are plain files loaded in order by `index.html`.
 
