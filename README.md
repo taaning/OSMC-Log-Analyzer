@@ -79,14 +79,6 @@ There is no build step and there are no dependencies: the scripts are plain file
 
 Copy the files to any web server. The page loads its language files and the banned add-ons list with `fetch`, so it must be served over HTTP(S); opening `index.html` directly from disk does not work.
 
-To try it locally:
-
-```bash
-python -m http.server 8765
-```
-
-Then open <http://localhost:8765>.
-
 ## Development
 
 The comment at the top of `index.html` describes what each script file holds and how to:
