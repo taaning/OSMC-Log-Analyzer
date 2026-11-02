@@ -39,6 +39,10 @@ main { max-width: 1280px; margin: 0 auto; padding: 16px; }
 #drop.over { border-color: var(--accent); background: var(--accent-soft); }
 #drop h2 { margin: 0 0 6px; font-size: 20px; }
 #drop p { margin: 4px 0; color: var(--muted); }
+/* field on the start screen to paste a log's text into (main.js loads it on paste; the text is never shown, so no resizing) */
+#paste { display: block; width: 100%; margin-top: 12px; resize: none; font: 13px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace;
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); color: var(--text); }
+#paste:focus { outline: none; border-color: var(--accent); }
 /* tabs live in the sticky header so they stay visible while scrolling */
 .tabs { display: flex; gap: 4px; overflow-x: auto; flex-basis: 100%; margin: -4px 0 -12px; scrollbar-width: thin; }
 .tabs[hidden] { display: none; }

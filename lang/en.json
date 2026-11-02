@@ -419,5 +419,11 @@
   "The video timestamps of “{0}” jump {1}× (up to {2}).": "The video timestamps of “{0}” jump {1}× (up to {2}).",
   "The video decoder got pictures whose timestamps jump forward, which is seen as a jerk or a short freeze. This usually comes from the file itself (for example a badly remuxed or converted file), not from the device. Try another copy of the file; for help, upload the first 30 seconds of it to the OSMC forum together with this log.": "The video decoder got pictures whose timestamps jump forward, which is seen as a jerk or a short freeze. This usually comes from the file itself (for example a badly remuxed or converted file), not from the device. Try another copy of the file; for help, upload the first 30 seconds of it to the OSMC forum together with this log.",
   "Switch to light mode": "Switch to light mode",
-  "Switch to dark mode": "Switch to dark mode"
+  "Switch to dark mode": "Switch to dark mode",
+  "…or paste the whole log here (Ctrl+V)": "…or paste the whole log here (Ctrl+V)",
+  "Pasted log": "Pasted log",
+  "The page can’t open paste.osmc.tv links itself. Open {0}, select all the text (Ctrl+A), copy it and paste it here.": "The page can’t open paste.osmc.tv links itself. Open {0}, select all the text (Ctrl+A), copy it and paste it here.",
+  "Paste another log": "Paste another log",
+  "The browser doesn’t let the page read the clipboard. Copy the log and press Ctrl+V on the page instead.": "The browser doesn’t let the page read the clipboard. Copy the log and press Ctrl+V on the page instead.",
+  "The clipboard is empty. Copy the whole log first.": "The clipboard is empty. Copy the whole log first."
 }

@@ -419,5 +419,11 @@
   "The video timestamps of “{0}” jump {1}× (up to {2}).": "Videoens tidsstempler i “{0}” springer {1}× (op til {2}).",
   "The video decoder got pictures whose timestamps jump forward, which is seen as a jerk or a short freeze. This usually comes from the file itself (for example a badly remuxed or converted file), not from the device. Try another copy of the file; for help, upload the first 30 seconds of it to the OSMC forum together with this log.": "Videodekoderen fik billeder, hvis tidsstempler springer frem, hvilket ses som et ryk eller et kort frys. Det skyldes som regel selve filen (fx en dårligt remuxet eller konverteret fil), ikke enheden. Prøv en anden kopi af filen; for at få hjælp kan du uploade de første 30 sekunder af den til OSMC-forummet sammen med denne log.",
   "Switch to light mode": "Skift til lyst tema",
-  "Switch to dark mode": "Skift til mørkt tema"
+  "Switch to dark mode": "Skift til mørkt tema",
+  "…or paste the whole log here (Ctrl+V)": "…eller indsæt hele loggen her (Ctrl+V)",
+  "Pasted log": "Indsat log",
+  "The page can’t open paste.osmc.tv links itself. Open {0}, select all the text (Ctrl+A), copy it and paste it here.": "Siden kan ikke selv åbne links til paste.osmc.tv. Åbn {0}, markér al teksten (Ctrl+A), kopiér den, og indsæt den her.",
+  "Paste another log": "Indsæt anden log",
+  "The browser doesn’t let the page read the clipboard. Copy the log and press Ctrl+V on the page instead.": "Browseren lader ikke siden læse udklipsholderen. Kopiér loggen, og tryk Ctrl+V på siden i stedet.",
+  "The clipboard is empty. Copy the whole log first.": "Udklipsholderen er tom. Kopiér hele loggen først."
 }

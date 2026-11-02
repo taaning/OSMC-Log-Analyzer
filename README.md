@@ -10,7 +10,7 @@ Everything runs in the browser. The log file is never uploaded anywhere.
 ## Usage
 
 1. On the OSMC device, create a full log with `grab-logs -A` and save it as a file (for example `osmc.log`).
-2. Open the page and drop the file onto it, or click to choose it.
+2. Open the page and drop the file onto it, or click to choose it. You can also paste the log's text: into the field on the start page, or with Ctrl+V anywhere on the page (also to load another log), or with **Paste another log** once a log is shown. A paste.osmc.tv link can't be opened by the page itself; open it, copy all the text and paste that.
 3. Browse the tabs. Use **Load another log** to open a different file.
 
 The interface is available in English and Danish (the **EN / DA** buttons). The chosen language is remembered.
