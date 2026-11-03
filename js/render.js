@@ -160,13 +160,21 @@ function render(log, fileName, fileSize) {
     <div class="toolbar"><input type="search" id="gs-q" placeholder="${esc(T('Search settings (id or value)…'))}">
     <label class="chk"><input type="checkbox" id="gs-all"> ${esc(T('Also show default values'))}</label></div>
     <div id="gs-out"></div></section>`;
+  // the user's advancedsettings.xml, and OSMC's own, which is not a log section but which Kodi prints at start-up
+  const adv = parseXml(S('advancedsettings.xml'));
+  const sysAdv = kodiEntries.find(e => /^Contents of special:\/\/xbmc\/system\/advancedsettings\.xml/.test(e.msg));
+  const sysDoc = sysAdv && parseXml(sysAdv.extra.join('\n'));
+  html += '<div class="grid">' + card(T('advancedsettings.xml (user)'), adv ? table([T('Setting'), T('Value')], flattenXml(adv.documentElement).map(([k, v]) => [k, unmask(v)]))
+    : (S('advancedsettings.xml').trim() ? `<pre>${esc(S('advancedsettings.xml'))}</pre>` : `<p class="empty">${esc(T('No advancedsettings.xml'))}</p>`))
+    + (sysAdv ? card(T('advancedsettings.xml (OSMC system)'), sysDoc ? table([T('Setting'), T('Value')], flattenXml(sysDoc.documentElement).map(([k, v]) => [k, xmlDecode(v)]))
+      : `<pre>${esc(sysAdv.extra.join('\n'))}</pre>`, esc(T('OSMC’s own defaults, from the Kodi log'))) : '') + '</div>';
   const dvs = parseSimpleXmlBlock(S('guisettings.xml'), 'defaultvideosettings');
   const das = parseSimpleXmlBlock(S('guisettings.xml'), 'defaultaudiosettings');
   if (dvs.length || das.length) html += '<div class="grid">' + (dvs.length ? card(T('Default video settings'), kv(dvs)) : '') + (das.length ? card(T('Default audio settings'), kv(das)) : '') + '</div>';
   if (kodi && kodi.info.cache) html += card(T('Cache'), `<pre>${esc(kodi.info.cache.join('\n'))}</pre>`, esc(T('from the Kodi log')));
   addTab('settings', T('Kodi settings'), html);
 
-  // --- Sources & storage tab: sources.xml, fstab, network mounts, disk space, advancedsettings.xml ---
+  // --- Sources & storage tab: sources.xml, fstab, network mounts, disk space ---
   html = '';
   const srcs = parseSources(S('sources.xml'));
   html += card(T('Media sources'), table([T('Type'), T('Name'), T('Path')], srcs.map(s => [s.type, s.name, raw(s.paths.map(p => `<code>${esc(p)}</code>`).join('<br>'))])), 'sources.xml');
@@ -179,15 +187,6 @@ function render(log, fileName, fileSize) {
   ])), esc(T('from /proc/mounts')));
   html += card(T('Disk space'), table([T('Filesystem'), T('Size'), T('Used'), T('Free'), T('Use'), T('Mount point')],
     d.df.map(x => [raw(`<code>${esc(x.fs)}</code>`), x.size, x.used, x.avail, raw(`${x.pct}%${bar(x.pct)}`), x.mnt])));
-  const adv = parseXml(S('advancedsettings.xml'));
-  html += card(T('advancedsettings.xml (user)'), adv ? table([T('Setting'), T('Value')], flattenXml(adv.documentElement).map(([k, v]) => [k, unmask(v)]))
-    : (S('advancedsettings.xml').trim() ? `<pre>${esc(S('advancedsettings.xml'))}</pre>` : `<p class="empty">${esc(T('No advancedsettings.xml'))}</p>`));
-  // OSMC's own advancedsettings.xml is not a log section, but Kodi prints its contents at start-up
-  const sysAdv = kodiEntries.find(e => /^Contents of special:\/\/xbmc\/system\/advancedsettings\.xml/.test(e.msg));
-  if (sysAdv) {
-    const doc = parseXml(sysAdv.extra.join('\n'));
-    html += card(T('advancedsettings.xml (OSMC system)'), doc ? table([T('Setting'), T('Value')], flattenXml(doc.documentElement).map(([k, v]) => [k, xmlDecode(v)])) : `<pre>${esc(sysAdv.extra.join('\n'))}</pre>`, esc(T('OSMC’s own defaults, from the Kodi log')));
-  }
   addTab('storage', T('Sources & storage'), html);
 
   // --- Display & audio tab: EDID, HDR, Dolby Vision, display modes, audio formats and devices ---
