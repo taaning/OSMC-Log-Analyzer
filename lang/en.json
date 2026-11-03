@@ -455,5 +455,16 @@
   "share libraries": "share libraries",
   "receive and play": "receive and play",
   "control other players": "control other players",
-  "announces these services on the network": "announces these services on the network"
+  "announces these services on the network": "announces these services on the network",
+  "Done by the user": "Done by the user",
+  "Packages installed or removed with apt": "Packages installed or removed with apt",
+  "Command": "Command",
+  "Changes": "Changes",
+  "SSH logins": "SSH logins",
+  "User": "User",
+  "Method": "Method",
+  "From": "From",
+  "failed": "failed",
+  "Commands run with sudo": "Commands run with sudo",
+  "apt runs from the APT history; logins and sudo commands from the last ~24 hours of the system journal. Commands run without sudo are not logged.": "apt runs from the APT history; logins and sudo commands from the last ~24 hours of the system journal. Commands run without sudo are not logged."
 }

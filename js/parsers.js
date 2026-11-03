@@ -249,7 +249,8 @@ function parseDpkg(t) {
     .map(m => ({ status: m[1], name: m[2], version: m[3], arch: m[4], desc: m[5] }));
 }
 // "APT history.log": blank-line separated runs (Start-Date, Commandline, Install/Upgrade/Remove/Purge, End-Date)
-// -> runs, newest first, with package lists split into one entry per package.
+// -> runs, newest first, with package lists split into one entry per package. requested is the user who ran apt
+// with sudo ("Requested-By: osmc (1000)"); My OSMC's updates run as the system and have none.
 function parseAptHistory(t) {
   return t.split(/\n\s*\n/).map(b => {
     const g = k => (new RegExp(`^${k}: (.*)$`, 'm').exec(b) || [])[1];
@@ -258,11 +259,38 @@ function parseAptHistory(t) {
     if (!start) return null;
     return {
       start: start.replace(/\s+/, ' '), end: (g('End-Date') || '').replace(/\s+/, ' '),
-      cmd: g('Commandline') || '',
+      cmd: g('Commandline') || '', requested: (/^(\S+)/.exec(g('Requested-By') || '') || [])[1],
       install: pkgs('Install'), upgrade: pkgs('Upgrade'), remove: pkgs('Remove'), purge: pkgs('Purge'),
       error: g('Error'),
     };
   }).filter(Boolean).sort((a, b) => b.start.localeCompare(a.start));
+}
+// An APT command line as typed: "/usr/bin/apt-get-real -o APT::Keep-Fds::=5 -y purge x" -> "apt-get -y purge x"
+// (OSMC wraps apt and apt-get, so the log shows the real programs).
+const aptCmd = cmd => cmd.replace(/^\/usr\/bin\/(apt(?:-get)?)-real\s+(?:-o \S+\s+)*/, '$1 ').replace(/^\/usr\/bin\//, '');
+// "System Journal": what a user did over SSH in the time the journal covers (grab-logs takes about the last
+// 24 hours). -> { logins: [{ user, method, from, ok, count, last }], sudo: [{ time, user, command }] }
+//   sshd[123]: Accepted publickey for osmc from 192.168.1.20 port 51514 ssh2      (or "Failed password for …")
+//   sudo[456]:     osmc : TTY=pts/0 ; PWD=/home/osmc ; USER=root ; COMMAND=/usr/bin/systemctl stop mediacenter
+// OSMC's own sudo commands (Kodi's start, the time zone, disk tuning) run from "/", and grab-logs' own commands
+// are left out too, so the sudo list is what someone typed in a shell.
+function parseUserActivity(t) {
+  const logins = new Map(), sudo = [];
+  for (const l of t.split('\n')) {
+    const time = l.slice(0, 15);
+    let m;
+    if ((m = /sshd\[\d+\]: (Accepted|Failed) (\S+) for (?:invalid user )?(\S+) from (\S+)/.exec(l))) {
+      const key = m.slice(1).join(' ');
+      const e = logins.get(key) || { ok: m[1] === 'Accepted', method: m[2], user: m[3], from: m[4], count: 0 };
+      e.count++; e.last = time;
+      logins.set(key, e);
+    } else if ((m = /sudo\[\d+\]:\s+(\S+) : (?:TTY=\S+ ; )?PWD=(.*?) ; USER=(\S+) ; (?:ENV=.*? ; )?COMMAND=(.*)$/.exec(l))) {
+      const [, by, pwd, as, command] = m;
+      if (by === 'root' || pwd === '/' || /^\/usr\/bin\/(?:journalctl (?:-n \d+|--flush)|getent shadow)\b/.test(command)) continue;
+      sudo.push({ time, user: as === 'root' ? by : `${by} → ${as}`, command: command.replace(/#012/g, ' ⏎ ') });
+    }
+  }
+  return { logins: [...logins.values()], sudo };
 }
 // Raspberry Pi model ("Raspberry Pi 400 Rev 1.1", from the kernel's "Machine model:" line) -> SoC.
 // Kodi's "Running on" line can't be used: the Pi kernel reports "BCM2835" in /proc/cpuinfo on every model.

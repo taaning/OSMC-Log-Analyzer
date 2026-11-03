@@ -455,5 +455,16 @@
   "share libraries": "deler biblioteker",
   "receive and play": "modtager og afspiller",
   "control other players": "styrer andre afspillere",
-  "announces these services on the network": "annoncerer tjenesterne på netværket"
+  "announces these services on the network": "annoncerer tjenesterne på netværket",
+  "Done by the user": "Gjort af brugeren",
+  "Packages installed or removed with apt": "Pakker installeret eller fjernet med apt",
+  "Command": "Kommando",
+  "Changes": "Ændringer",
+  "SSH logins": "SSH-logins",
+  "User": "Bruger",
+  "Method": "Metode",
+  "From": "Fra",
+  "failed": "mislykket",
+  "Commands run with sudo": "Kommandoer kørt med sudo",
+  "apt runs from the APT history; logins and sudo commands from the last ~24 hours of the system journal. Commands run without sudo are not logged.": "apt-kørsler fra APT-historikken; logins og sudo-kommandoer fra de sidste ca. 24 timer i systemjournalen. Kommandoer uden sudo bliver ikke logget."
 }

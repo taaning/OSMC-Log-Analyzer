@@ -297,9 +297,25 @@ function render(log, fileName, fileSize) {
   html += card(T('APT history'), hist.length ? hist.map(h => `<details><summary><span class="name">${esc(h.start)}</span>
       ${h.install.length ? badge(T('{0} installed', h.install.length), 'acc') : ''}${h.upgrade.length ? badge(T('{0} upgraded', h.upgrade.length), 'ok') : ''}
       ${h.remove.length + h.purge.length ? badge(T('{0} removed', h.remove.length + h.purge.length), 'warn') : ''}${h.error ? badge(T('error'), 'bad') : ''}
-      <span class="muted mono">${esc(h.cmd.replace(/^\/usr\/bin\/apt-get-real (-o \S+ )*/, 'apt-get ').slice(0, 90))}</span></summary>
+      <span class="muted mono">${esc(aptCmd(h.cmd).slice(0, 90))}</span></summary>
       <div class="body">${h.error ? `<p class="badge bad">${esc(h.error)}</p>` : ''}${[['Installed', h.install], ['Upgraded', h.upgrade], ['Removed', h.remove], ['Purged', h.purge]].filter(x => x[1].length)
       .map(([l, p]) => `<h4>${esc(T(l))}</h4><div class="lines">${p.map(x => `<div>${esc(x)}</div>`).join('')}</div>`).join('')}</div></details>`).join('') : `<p class="empty">${esc(T('None'))}</p>`, esc(T('newest first')));
+
+  // what the user did over SSH, for information: apt runs started with sudo (the whole APT history), and SSH logins
+  // and sudo commands typed in a shell (only the time the journal covers)
+  const ua = parseUserActivity(S('System Journal'));
+  const userApt = hist.filter(h => h.requested);
+  // (the command shows what was asked for; the counts include the dependencies apt added)
+  html += card(T('Done by the user'), `<h4>${esc(T('Packages installed or removed with apt'))}</h4>` + table([T('Time'), T('Command'), T('Changes')], userApt.map(h => [
+      h.start, raw(`<code>${esc(aptCmd(h.cmd))}</code>`),
+      raw([h.install.length && badge(T('{0} installed', h.install.length), 'acc'), h.upgrade.length && badge(T('{0} upgraded', h.upgrade.length), 'ok'),
+        h.remove.length + h.purge.length && badge(T('{0} removed', h.remove.length + h.purge.length), 'warn'), h.error && badge(T('error'), 'bad')].filter(Boolean).join(' ')),
+    ]), { cols: ['18%', '57%', '25%'] })
+    + `<h4>${esc(T('SSH logins'))}</h4>` + table([T('Last'), T('User'), T('Method'), T('From'), T('Count')], ua.logins.map(e => [
+      e.last, e.user, raw((e.ok ? '' : badge(T('failed'), 'warn') + ' ') + esc(e.method)), e.from, e.count]))
+    + `<h4>${esc(T('Commands run with sudo'))}</h4>` + table([T('Time'), T('User'), T('Command')], ua.sudo.map(s => [s.time, s.user, raw(`<code>${esc(s.command)}</code>`)]),
+      { scroll: true, cols: ['16%', '14%', '70%'] }),
+    esc(T('apt runs from the APT history; logins and sudo commands from the last ~24 hours of the system journal. Commands run without sudo are not logged.')));
   const jErr = groupJournal(S('System Journal'), /\b(error|failed|failure|fatal|segfault|timed out)\b/i);
   // known harmless messages are left out unless "Show known harmless messages" is ticked (see HARMLESS)
   const msgCells = g => [g.count, raw(`<span class="mono">${esc(g.text)}</span>`)];
