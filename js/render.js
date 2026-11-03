@@ -164,10 +164,11 @@ function render(log, fileName, fileSize) {
   const adv = parseXml(S('advancedsettings.xml'));
   const sysAdv = kodiEntries.find(e => /^Contents of special:\/\/xbmc\/system\/advancedsettings\.xml/.test(e.msg));
   const sysDoc = sysAdv && parseXml(sysAdv.extra.join('\n'));
-  html += '<div class="grid">' + card(T('advancedsettings.xml (user)'), adv ? table([T('Setting'), T('Value')], flattenXml(adv.documentElement).map(([k, v]) => [k, unmask(v)]))
+  // (each at full width: setting paths and values can be long)
+  html += card(T('advancedsettings.xml (user)'), adv ? table([T('Setting'), T('Value')], flattenXml(adv.documentElement).map(([k, v]) => [k, unmask(v)]))
     : (S('advancedsettings.xml').trim() ? `<pre>${esc(S('advancedsettings.xml'))}</pre>` : `<p class="empty">${esc(T('No advancedsettings.xml'))}</p>`))
     + (sysAdv ? card(T('advancedsettings.xml (OSMC system)'), sysDoc ? table([T('Setting'), T('Value')], flattenXml(sysDoc.documentElement).map(([k, v]) => [k, xmlDecode(v)]))
-      : `<pre>${esc(sysAdv.extra.join('\n'))}</pre>`, esc(T('OSMC’s own defaults, from the Kodi log'))) : '') + '</div>';
+      : `<pre>${esc(sysAdv.extra.join('\n'))}</pre>`, esc(T('OSMC’s own defaults, from the Kodi log'))) : '');
   const dvs = parseSimpleXmlBlock(S('guisettings.xml'), 'defaultvideosettings');
   const das = parseSimpleXmlBlock(S('guisettings.xml'), 'defaultaudiosettings');
   if (dvs.length || das.length) html += '<div class="grid">' + (dvs.length ? card(T('Default video settings'), kv(dvs)) : '') + (das.length ? card(T('Default audio settings'), kv(das)) : '') + '</div>';
