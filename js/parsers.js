@@ -360,7 +360,10 @@ function analyzeKodi(entries) {
     else if ((m = /^Kodi compiled (.*)$/.exec(msg))) a.info.compiled = m[1];
     else if ((m = /^GUI format (.*)$/.exec(msg))) a.info.guiFormat = m[1];
     else if ((m = /^load skin from: \S+ \(version: ([^)]+)\)/.exec(msg))) a.info.skin = (/addons\/([^/]+)\//.exec(msg) || [])[1] + ' ' + m[1];
+    // debug logging was on at some time in the log: switched on in the GUI, or set with <loglevel>1</loglevel> in
+    // advancedsettings.xml, where Kodi logs "Disabled debug logging due to GUI setting. Level 1." (level 0 or -1 = off)
     else if (msg.startsWith('Enabled debug logging')) a.debugLogging = true;
+    else if ((m = /^Disabled debug logging due to GUI setting\. Level (-?\d+)/.exec(msg)) && +m[1] >= 1) a.debugLogging = true;
     else if (msg.startsWith('New Cache GUI Settings')) a.info.cache = e.extra;
     else if ((m = /^CAddonMgr::FindAddons: (\S+) v(\S+) installed/.exec(msg))) a.addons.set(m[1], m[2]);
     else if ((m = /^Repository add-on (\S+) /.exec(msg)) && e.level === 'error') a.repoErrors.add(m[1]);
