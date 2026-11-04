@@ -317,8 +317,6 @@
   "The power supply is too weak or its cable too thin. Use the official power supply, and power USB disks through a powered hub.": "Strømforsyningen er for svag, eller kablet er for tyndt. Brug den officielle strømforsyning, og giv USB-diske strøm via en hub med egen strømforsyning.",
   "USB errors ({0}×).": "USB-fejl ({0}×).",
   "A USB device is not responding properly. Try another port or cable. USB disks may need more power (a powered hub).": "En USB-enhed svarer ikke korrekt. Prøv en anden port eller et andet kabel. USB-diske kan have brug for mere strøm (en hub med egen strømforsyning).",
-  "Many HDMI connect/disconnect events ({0}×).": "Mange HDMI-til/frakoblinger ({0}×).",
-  "The TV or receiver keeps dropping the HDMI connection. Try another HDMI cable or input, and avoid switches or adapters in between.": "TV’et eller receiveren mister HDMI-forbindelsen igen og igen. Prøv et andet HDMI-kabel eller en anden indgang, og undgå switche eller adaptere imellem.",
   "Overclocking settings in config-user.txt: {0}.": "Overclocking-indstillinger i config-user.txt: {0}.",
   "Overclocking can cause freezes, crashes and SD card corruption. Remove these lines if the system is unstable.": "Overclocking kan give frys, nedbrud og ødelagte SD-kort. Fjern linjerne, hvis systemet er ustabilt.",
   "Turn it on under Settings → System → Display → Adjust display refresh rate (“On start/stop”).": "Slå det til under Indstillinger → System → Skærm → Tilpas skærmens opdateringshastighed (“Ved start/stop”).",
@@ -476,5 +474,7 @@
   "Merge the blocks with the same name into one.": "Saml blokkene med samme navn i én.",
   "advancedsettings.xml has a <cache> block, which Kodi no longer uses.": "advancedsettings.xml har en <cache>-blok, som Kodi ikke længere bruger.",
   "Set the cache under Settings → Services → Caching instead (the Kodi log lists the values in use under “New Cache GUI Settings”).": "Indstil cachen under Indstillinger → Tjenester → Caching i stedet (Kodi-loggen viser de værdier, der bruges, under “New Cache GUI Settings”).",
-  "Source code on GitHub": "Kildekode på GitHub"
+  "Source code on GitHub": "Kildekode på GitHub",
+  "The HDMI connection was briefly lost {0}× (about {1} s each), not at start-up or at a change of display mode.": "HDMI-forbindelsen forsvandt kortvarigt {0}× (ca. {1} s hver gang), ikke ved opstart eller skift af skærmtilstand.",
+  "This is normal when the TV or receiver is switched on or to another input. If it happens while you are watching, try another HDMI cable or input, and avoid switches or adapters in between.": "Det er normalt, når TV’et eller receiveren tændes eller skifter indgang. Sker det, mens du ser noget, så prøv et andet HDMI-kabel eller en anden indgang, og undgå switche eller adaptere imellem."
 }

@@ -196,12 +196,47 @@ const RULES = [
     match: /usb \S+: (?:device descriptor read\/\S+, error|device not accepting address|unable to enumerate|can't set config|Cannot enable)|over-current/i,
     text: 'USB errors ({0}×).',
     hint: 'A USB device is not responding properly. Try another port or cable. USB disks may need more power (a powered hub).' }),
-  // only the HDMI driver's own lines (case-sensitive "hdmitx:"): the eARC driver logs the same event again
-  // ("HDMITX cable is plugout"), and every boot has one plugout/plugin pair
-  simple({ cat: 'hardware', sev: 'warn', in: 'system', min: 6,
-    match: [/hdmitx: .*\bplug ?(?:in|out)\b/, /HDMI.*hot ?plug|\bhpd\b.*(?:low|high|changed)/i],
-    text: 'Many HDMI connect/disconnect events ({0}×).',
-    hint: 'The TV or receiver keeps dropping the HDMI connection. Try another HDMI cable or input, and avoid switches or adapters in between.' }),
+  { cat: 'hardware', check: d => {
+    // Short HDMI drops on the Vero: the HDMI driver logs "hdmitx: system: plugout" and "… plugin" (case-sensitive
+    // "hdmitx:"; the eARC driver logs the same event again as "HDMITX cable is plugout"). One drop is a plugout (often
+    // two in a row) until the next plugin. Drops are normal at start-up and when the display mode changes (the TV
+    // re-syncs), so those are left out: within 40 s after the kernel starts, or within 6 s of "vout: setting vmode".
+    // What's left is usually the TV or receiver being switched on or to another input, or a bad cable or switch.
+    const sec = sysSec(d), s = d.log.byName[sec];
+    if (!s) return;
+    // time of a line in seconds: journal "Nov 03 10:48:39.300260 …" (days counted from the month and day), or the
+    // kernel log's "[   12.345678]" (seconds since start-up)
+    const time = l => {
+      let m = /^(\w{3} +\d+) (\d\d):(\d\d):(\d\d(?:\.\d+)?)/.exec(l);
+      if (m) return Date.parse(`${m[1]} 2000`) / 1000 + m[2] * 3600 + m[3] * 60 + +m[4];
+      m = /^\[\s*(\d+\.\d+)\]/.exec(l);
+      return m ? +m[1] : null;
+    };
+    const boots = sec === 'Kernel Message Log' ? [0] : [], modes = [], seq = [];
+    s.lines.forEach((l, j) => {
+      const t = time(l);
+      if (t == null) return;
+      if (/kernel: Linux version /.test(l)) boots.push(t);
+      else if (/vout: setting vmode to (?!null)/.test(l)) modes.push(t);
+      else if (/hdmitx: .*\bplug ?(in|out)\b/.test(l)) seq.push({ t, j, out: /plug ?out/.test(l) });
+    });
+    const drops = [];
+    for (let i = 0; i < seq.length; i++) {
+      if (!seq[i].out) continue;
+      let k = i;
+      while (k + 1 < seq.length && seq[k + 1].out) k++;
+      if (k + 1 >= seq.length) break;
+      const from = seq[i].t, gap = seq[k + 1].t - from;
+      const normal = boots.some(b => from - b >= 0 && from - b <= 40) || modes.some(m => Math.abs(from - m) <= 6);
+      if (!normal) drops.push({ j: seq[i].j, gap });
+      i = k + 1;
+    }
+    if (drops.length < 5) return;
+    const gaps = drops.map(x => x.gap).sort((a, b) => a - b), typical = gaps[Math.floor(gaps.length / 2)];
+    return { sev: 'info', text: T('The HDMI connection was briefly lost {0}× (about {1} s each), not at start-up or at a change of display mode.', drops.length, typical.toFixed(1)),
+      hint: T('This is normal when the TV or receiver is switched on or to another input. If it happens while you are watching, try another HDMI cable or input, and avoid switches or adapters in between.'),
+      ev: { hits: drops.slice(0, 50).map(x => ({ sec, line: x.j, n: s.startLine + x.j, text: s.lines[x.j] })), count: drops.length } };
+  } },
   { cat: 'hardware', check: d => {
     // The Vero V's built-in remote receiver (USB 2017:xxxx "OSMC Remote Controller" / "OSMC RF Remote") sits on an
     // internal USB hub (usb 1-1). Only flagged when the log shows the devices were scanned: Kodi registered its

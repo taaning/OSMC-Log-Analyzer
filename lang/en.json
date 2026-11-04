@@ -317,8 +317,6 @@
   "The power supply is too weak or its cable too thin. Use the official power supply, and power USB disks through a powered hub.": "The power supply is too weak or its cable too thin. Use the official power supply, and power USB disks through a powered hub.",
   "USB errors ({0}×).": "USB errors ({0}×).",
   "A USB device is not responding properly. Try another port or cable. USB disks may need more power (a powered hub).": "A USB device is not responding properly. Try another port or cable. USB disks may need more power (a powered hub).",
-  "Many HDMI connect/disconnect events ({0}×).": "Many HDMI connect/disconnect events ({0}×).",
-  "The TV or receiver keeps dropping the HDMI connection. Try another HDMI cable or input, and avoid switches or adapters in between.": "The TV or receiver keeps dropping the HDMI connection. Try another HDMI cable or input, and avoid switches or adapters in between.",
   "Overclocking settings in config-user.txt: {0}.": "Overclocking settings in config-user.txt: {0}.",
   "Overclocking can cause freezes, crashes and SD card corruption. Remove these lines if the system is unstable.": "Overclocking can cause freezes, crashes and SD card corruption. Remove these lines if the system is unstable.",
   "Turn it on under Settings → System → Display → Adjust display refresh rate (“On start/stop”).": "Turn it on under Settings → System → Display → Adjust display refresh rate (“On start/stop”).",
@@ -476,5 +474,7 @@
   "Merge the blocks with the same name into one.": "Merge the blocks with the same name into one.",
   "advancedsettings.xml has a <cache> block, which Kodi no longer uses.": "advancedsettings.xml has a <cache> block, which Kodi no longer uses.",
   "Set the cache under Settings → Services → Caching instead (the Kodi log lists the values in use under “New Cache GUI Settings”).": "Set the cache under Settings → Services → Caching instead (the Kodi log lists the values in use under “New Cache GUI Settings”).",
-  "Source code on GitHub": "Source code on GitHub"
+  "Source code on GitHub": "Source code on GitHub",
+  "The HDMI connection was briefly lost {0}× (about {1} s each), not at start-up or at a change of display mode.": "The HDMI connection was briefly lost {0}× (about {1} s each), not at start-up or at a change of display mode.",
+  "This is normal when the TV or receiver is switched on or to another input. If it happens while you are watching, try another HDMI cable or input, and avoid switches or adapters in between.": "This is normal when the TV or receiver is switched on or to another input. If it happens while you are watching, try another HDMI cable or input, and avoid switches or adapters in between."
 }

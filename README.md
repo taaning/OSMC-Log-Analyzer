@@ -46,7 +46,7 @@ The page checks the log for common problems, many of them ones that helpers on t
 | **Network** | Lost connections during playback, DNS errors, TV (PVR) add-ons that can't log in to or reach their server, Wi-Fi instead of a cable, interface errors |
 | **Crashes & errors** | Program crashes (segfaults), errors that repeat many times in the current or previous Kodi log |
 | **Storage & memory** | Nearly full disks, low memory, out-of-memory kills, file system errors, unclean shutdowns |
-| **Hardware & power** | Under-voltage, USB errors, HDMI connection drops, CEC adapter and message failures, overclocking in `config-user.txt` |
+| **Hardware & power** | Under-voltage, USB errors, short HDMI connection drops (not counting those at start-up or at a display mode change, which are normal), CEC adapter and message failures, overclocking in `config-user.txt` |
 | **Display** | Refresh rate adjustment off, refresh rate switches without a pause for the TV, only 640x480 found, custom video calibration, changed default view (zoom/stretch), skin zoom, display settings in `config-user.txt`, Dolby Vision support and metadata errors |
 | **Audio** | Passthrough off although the TV/receiver supports it, formats not enabled, too few channels |
 | **Playback** | Playbacks that take more than 5 seconds to show a picture or have many late frames at the start, large audio sync errors, jumps in a file's video timestamps (Vero) |
