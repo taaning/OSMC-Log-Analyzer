@@ -475,5 +475,6 @@
   "advancedsettings.xml has the same block more than once: {0}. Kodi only reads the first one, so these settings are ignored: {1}.": "advancedsettings.xml has the same block more than once: {0}. Kodi only reads the first one, so these settings are ignored: {1}.",
   "Merge the blocks with the same name into one.": "Merge the blocks with the same name into one.",
   "advancedsettings.xml has a <cache> block, which Kodi no longer uses.": "advancedsettings.xml has a <cache> block, which Kodi no longer uses.",
-  "Set the cache under Settings → Services → Caching instead (the Kodi log lists the values in use under “New Cache GUI Settings”).": "Set the cache under Settings → Services → Caching instead (the Kodi log lists the values in use under “New Cache GUI Settings”)."
+  "Set the cache under Settings → Services → Caching instead (the Kodi log lists the values in use under “New Cache GUI Settings”).": "Set the cache under Settings → Services → Caching instead (the Kodi log lists the values in use under “New Cache GUI Settings”).",
+  "Source code on GitHub": "Source code on GitHub"
 }
