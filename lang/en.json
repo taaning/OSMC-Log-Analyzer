@@ -466,5 +466,14 @@
   "From": "From",
   "failed": "failed",
   "Commands run with sudo": "Commands run with sudo",
-  "apt runs from the APT history; logins and sudo commands from the last ~24 hours of the system journal. Commands run without sudo are not logged.": "apt runs from the APT history; logins and sudo commands from the last ~24 hours of the system journal. Commands run without sudo are not logged."
+  "apt runs from the APT history; logins and sudo commands from the last ~24 hours of the system journal. Commands run without sudo are not logged.": "apt runs from the APT history; logins and sudo commands from the last ~24 hours of the system journal. Commands run without sudo are not logged.",
+  "advancedsettings.xml is not valid XML, so Kodi ignores the whole file.": "advancedsettings.xml is not valid XML, so Kodi ignores the whole file.",
+  "Line {0}: {1}": "Line {0}: {1}",
+  "Check that every tag is closed and spelled the same at both ends, and that the file has no text outside the tags. A missing “/” is a common cause.": "Check that every tag is closed and spelled the same at both ends, and that the file has no text outside the tags. A missing “/” is a common cause.",
+  "advancedsettings.xml starts with <{0}> instead of <advancedsettings>, so Kodi ignores the whole file.": "advancedsettings.xml starts with <{0}> instead of <advancedsettings>, so Kodi ignores the whole file.",
+  "Put all the settings inside one <advancedsettings> … </advancedsettings> block.": "Put all the settings inside one <advancedsettings> … </advancedsettings> block.",
+  "advancedsettings.xml has the same block more than once: {0}. Kodi only reads the first one, so these settings are ignored: {1}.": "advancedsettings.xml has the same block more than once: {0}. Kodi only reads the first one, so these settings are ignored: {1}.",
+  "Merge the blocks with the same name into one.": "Merge the blocks with the same name into one.",
+  "advancedsettings.xml has a <cache> block, which Kodi no longer uses.": "advancedsettings.xml has a <cache> block, which Kodi no longer uses.",
+  "Set the cache under Settings → Services → Caching instead (the Kodi log lists the values in use under “New Cache GUI Settings”).": "Set the cache under Settings → Services → Caching instead (the Kodi log lists the values in use under “New Cache GUI Settings”)."
 }

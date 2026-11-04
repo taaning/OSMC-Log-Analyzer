@@ -52,6 +52,7 @@ The page checks the log for common problems, many of them ones that helpers on t
 | **Playback** | Playbacks that take more than 5 seconds to show a picture or have many late frames at the start, large audio sync errors, jumps in a file's video timestamps (Vero) |
 | **Updates & packages** | Packages not fully installed, many old kernels, `apt upgrade` instead of `dist-upgrade`, APT errors, no updates for a long time |
 | **Database** | MySQL/MariaDB connection errors and damaged databases |
+| **Kodi settings** | Mistakes in `advancedsettings.xml`: not valid XML, the wrong root element, a block that appears twice (Kodi only reads the first), a `<cache>` block Kodi no longer uses |
 | **About the log** | Debug logging off, sections `grab-logs` could not collect, a cut-off log file |
 
 Most playback details need debug logging in Kodi; the A/V sync and late-frame figures and the timestamp jumps also need component logging for **A/V sync** and **Video** (Settings → System → Logging).

@@ -19,7 +19,8 @@
 // problem categories in display order: id -> English label
 const CATS = {
   addons: 'Add-ons', shares: 'Network shares', network: 'Network', crashes: 'Crashes & errors', storage: 'Storage & memory',
-  hardware: 'Hardware & power', display: 'Display', audio: 'Audio', playback: 'Playback', updates: 'Updates & packages', database: 'Database', log: 'About the log',
+  hardware: 'Hardware & power', display: 'Display', audio: 'Audio', playback: 'Playback', updates: 'Updates & packages', database: 'Database',
+  settings: 'Kodi settings', log: 'About the log',
 };
 const SEV_ORDER = { bad: 0, warn: 1, info: 2, ok: 3 };
 const reEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -408,6 +409,44 @@ const RULES = [
     return { sev: 'bad', text: T('Database errors in the Kodi log ({0}×).', ev.count), ev,
       hint: shared ? T('Check the server address, user, password and database name in advancedsettings.xml, that the database server is running, and that all Kodi devices run the same Kodi version.')
         : T('The local library database may be damaged. Try cleaning the library, or restore a backup of the database.') };
+  } },
+
+  // --- Kodi settings ---
+  { cat: 'settings', check: d => {
+    // mistakes in the user's advancedsettings.xml: Kodi ignores the whole file if it isn't valid XML or its root isn't
+    // <advancedsettings>, reads only the first of two blocks with the same name, and no longer uses <cache>
+    const text = d.log.sec('advancedsettings.xml');
+    if (!text.trim().startsWith('<') || /^An error occurred while grabbing/m.test(text)) return;
+    const sec = 'advancedsettings.xml', tagLines = tags => find(d, sec, new RegExp(`^\\s*<(?:${tags.join('|')})[\\s>/]`));
+    const doc = new DOMParser().parseFromString(text.replace(/^﻿/, ''), 'application/xml');
+    const err = doc.querySelector('parsererror');
+    if (err) {
+      // the browser's parser names the line: Chrome "error on line 12 at column 5: Opening and ending tag mismatch: …",
+      // Firefox "XML Parsing Error: mismatched tag … Line Number 12, Column 5"
+      const e = err.textContent, c = /error on line (\d+) at column \d+: (.*?)(?:Below is a rendering|$)/s.exec(e), f = /XML Parsing Error: ([^\n]*)[\s\S]*?Line Number (\d+)/.exec(e);
+      const line = c ? +c[1] : f ? +f[2] : 0, why = (c ? c[2] : f ? f[1] : '').trim();
+      const s = d.log.byName[sec], kodi = find(d, KODI, /Error loading .*advancedsettings\.xml/);
+      return { sev: 'bad', text: T('advancedsettings.xml is not valid XML, so Kodi ignores the whole file.') + (why ? ` ${T('Line {0}: {1}', line, why)}` : ''),
+        hint: T('Check that every tag is closed and spelled the same at both ends, and that the file has no text outside the tags. A missing “/” is a common cause.'),
+        ev: line && s.lines[line - 1] != null ? { hits: [{ sec, line: line - 1, n: s.startLine + line - 1, text: s.lines[line - 1] }, ...kodi.hits], count: 1 + kodi.count } : kodi };
+    }
+    const root = doc.documentElement.tagName;
+    if (root !== 'advancedsettings') return { sev: 'bad', text: T('advancedsettings.xml starts with <{0}> instead of <advancedsettings>, so Kodi ignores the whole file.', root),
+      hint: T('Put all the settings inside one <advancedsettings> … </advancedsettings> block.'), ev: tagLines([root]) };
+    const out = [];
+    const count = {};
+    for (const c of doc.documentElement.children) count[c.tagName] = (count[c.tagName] || []).concat(c);
+    const dups = Object.entries(count).filter(([, els]) => els.length > 1);
+    if (dups.length) {
+      // the settings that are lost: the child elements of the second and later blocks
+      const lost = [...new Set(dups.flatMap(([, els]) => els.slice(1).flatMap(e => [...e.children].map(c => c.tagName))))];
+      out.push({ sev: 'warn', text: T('advancedsettings.xml has the same block more than once: {0}. Kodi only reads the first one, so these settings are ignored: {1}.',
+          dups.map(([t, els]) => `<${t}> (${els.length}×)`).join(', '), lost.join(', ') || '?'),
+        hint: T('Merge the blocks with the same name into one.'), ev: tagLines(dups.map(([t]) => t)) });
+    }
+    if (count.cache) out.push({ sev: 'info', text: T('advancedsettings.xml has a <cache> block, which Kodi no longer uses.'),
+      hint: T('Set the cache under Settings → Services → Caching instead (the Kodi log lists the values in use under “New Cache GUI Settings”).'), ev: tagLines(['cache']) });
+    return out;
   } },
 
   // --- about the log ---

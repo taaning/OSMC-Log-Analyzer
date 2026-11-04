@@ -466,5 +466,14 @@
   "From": "Fra",
   "failed": "mislykket",
   "Commands run with sudo": "Kommandoer kørt med sudo",
-  "apt runs from the APT history; logins and sudo commands from the last ~24 hours of the system journal. Commands run without sudo are not logged.": "apt-kørsler fra APT-historikken; logins og sudo-kommandoer fra de sidste ca. 24 timer i systemjournalen. Kommandoer uden sudo bliver ikke logget."
+  "apt runs from the APT history; logins and sudo commands from the last ~24 hours of the system journal. Commands run without sudo are not logged.": "apt-kørsler fra APT-historikken; logins og sudo-kommandoer fra de sidste ca. 24 timer i systemjournalen. Kommandoer uden sudo bliver ikke logget.",
+  "advancedsettings.xml is not valid XML, so Kodi ignores the whole file.": "advancedsettings.xml er ikke gyldig XML, så Kodi ignorerer hele filen.",
+  "Line {0}: {1}": "Linje {0}: {1}",
+  "Check that every tag is closed and spelled the same at both ends, and that the file has no text outside the tags. A missing “/” is a common cause.": "Tjek at hvert tag bliver lukket og staves ens i begge ender, og at filen ikke har tekst uden for tags. En manglende “/” er en almindelig årsag.",
+  "advancedsettings.xml starts with <{0}> instead of <advancedsettings>, so Kodi ignores the whole file.": "advancedsettings.xml starter med <{0}> i stedet for <advancedsettings>, så Kodi ignorerer hele filen.",
+  "Put all the settings inside one <advancedsettings> … </advancedsettings> block.": "Læg alle indstillingerne i én <advancedsettings> … </advancedsettings>-blok.",
+  "advancedsettings.xml has the same block more than once: {0}. Kodi only reads the first one, so these settings are ignored: {1}.": "advancedsettings.xml har den samme blok mere end én gang: {0}. Kodi læser kun den første, så disse indstillinger ignoreres: {1}.",
+  "Merge the blocks with the same name into one.": "Saml blokkene med samme navn i én.",
+  "advancedsettings.xml has a <cache> block, which Kodi no longer uses.": "advancedsettings.xml har en <cache>-blok, som Kodi ikke længere bruger.",
+  "Set the cache under Settings → Services → Caching instead (the Kodi log lists the values in use under “New Cache GUI Settings”).": "Indstil cachen under Indstillinger → Tjenester → Caching i stedet (Kodi-loggen viser de værdier, der bruges, under “New Cache GUI Settings”)."
 }
