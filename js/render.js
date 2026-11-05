@@ -84,7 +84,10 @@ function render(log, fileName, fileSize) {
   // warn when categories are switched off in the Problems tab, since their findings are missing from the list
   const nOff = Object.keys(CATS).filter(id => off.has(id)).length;
   const offNote = nOff ? `<li class="warn">${esc(T('{0} of {1} categories are switched off, so their findings are not shown.', nOff, Object.keys(CATS).length))} <a href="#" data-goto="problems">${esc(T('Change under Problems'))}</a></li>` : '';
-  html += card(T('Observations'), (shown.length || offNote ? '<ul class="obs">' + offNote + shown.map(f => `<li class="${f.sev}">${esc(f.text)}</li>`).join('') + '</ul>' : `<p class="empty">${esc(T('Nothing notable found.'))}</p>`)
+  // the overview lists what needs attention; the green "ok" findings (Dolby Vision support, debug logging on …) are only
+  // under Problems
+  const obs = shown.filter(f => f.sev !== 'ok');
+  html += card(T('Observations'), (obs.length || offNote ? '<ul class="obs">' + offNote + obs.map(f => `<li class="${f.sev}">${esc(f.text)}</li>`).join('') + '</ul>' : `<p class="empty">${esc(T('Nothing notable found.'))}</p>`)
     + `<p class="muted" style="margin:8px 0 0"><a href="#" data-goto="problems">${esc(T('Advice and log lines under Problems →'))}</a></p>`,
     esc(T('automatic checks, not a guarantee')));
   html += '<div class="grid">';

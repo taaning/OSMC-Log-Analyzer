@@ -42,17 +42,17 @@ The page checks the log for common problems, many of them ones that helpers on t
 | Category | Examples |
 | --- | --- |
 | **Add-ons** | Banned add-ons, broken repositories, Python errors in add-ons |
-| **Network shares** | SMB and NFS shares Kodi could not open, failed mounts |
-| **Network** | Lost connections during playback, DNS errors, TV (PVR) add-ons that can't log in to or reach their server, Wi-Fi instead of a cable, interface errors |
-| **Crashes & errors** | Program crashes (segfaults), errors that repeat many times in the current or previous Kodi log |
-| **Storage & memory** | Nearly full disks, low memory, out-of-memory kills, file system errors, unclean shutdowns |
+| **Network shares** | SMB and NFS shares Kodi could not open, failed mounts, an NFS server that stopped responding, folders on mounted drives Kodi could not read when scanning the library |
+| **Network** | Lost connections during playback, DNS errors (with the names that failed), TV (PVR) add-ons that can't log in to or reach their server, Wi-Fi instead of a cable, interface errors |
+| **Crashes & errors** | Kodi crashes (with how long it had run and what was playing), kernel crash reports saved at the next start-up, kernel errors, other program crashes, errors that repeat many times in the current or previous Kodi log |
+| **Storage & memory** | A nearly full system disk, or a data disk with almost no space left, low memory, out-of-memory kills, file system errors, unclean shutdowns |
 | **Hardware & power** | Under-voltage, USB errors, short HDMI connection drops (not counting those at start-up or at a display mode change, which are normal), CEC adapter and message failures, overclocking in `config-user.txt` |
-| **Display** | Refresh rate adjustment off, refresh rate switches without a pause for the TV, only 640x480 found, custom video calibration, changed default view (zoom/stretch), skin zoom, display settings in `config-user.txt`, Dolby Vision support and metadata errors |
-| **Audio** | Passthrough off although the TV/receiver supports it, formats not enabled, too few channels |
+| **Display** | Refresh rate adjustment off, no pause for refresh rate switches when a playback started badly, only 640x480 found, custom video calibration, changed default view (zoom/stretch), skin zoom, display settings in `config-user.txt`, Dolby Vision support and metadata errors |
+| **Audio** | Passthrough off although the TV/receiver supports it (a warning only for an AV receiver), formats not enabled, too few channels for a receiver |
 | **Playback** | Playbacks that take more than 5 seconds to show a picture or have many late frames at the start, large audio sync errors, jumps in a file's video timestamps (Vero) |
 | **Updates & packages** | Packages not fully installed, many old kernels, `apt upgrade` instead of `dist-upgrade`, APT errors, no updates for a long time |
 | **Database** | MySQL/MariaDB connection errors and damaged databases |
-| **Kodi settings** | Mistakes in `advancedsettings.xml`: not valid XML, the wrong root element, a block that appears twice (Kodi only reads the first), a `<cache>` block Kodi no longer uses |
+| **Kodi settings** | Mistakes in `advancedsettings.xml`: not valid XML, the wrong root element, a block that appears twice (Kodi only reads the first), a `<cache>` block Kodi no longer uses; a time zone that could not be set |
 | **About the log** | Debug logging off, sections `grab-logs` could not collect, a cut-off log file |
 
 Most playback details need debug logging in Kodi; the A/V sync and late-frame figures and the timestamp jumps also need component logging for **A/V sync** and **Video** (Settings → System → Logging).

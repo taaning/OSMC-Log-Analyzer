@@ -73,6 +73,26 @@ const simple = def => ({ cat: def.cat, def, check: d => {
   return ev.count >= (def.min || 1) && found(def.sev, ev, def.text, def.hint);
 } });
 
+// Python errors in add-ons -> { ev, ids }. Kodi logs one as "EXCEPTION Thrown …" followed by the traceback, where the
+// add-on is named by a file path. The culprit is the first add-on in the traceback that is not a shared module
+// (script.module.urllib3 …); the traceback ends at the next timestamped line.
+function pythonErrors(d) {
+  let ev = find(d, KODI, /EXCEPTION Thrown/);
+  if (!ev.count) ev = find(d, KODI, /Traceback \(most recent call last\)/);
+  const ids = new Set();
+  for (const h of ev.hits) {
+    const lines = d.log.byName[h.sec].lines, inTrace = [];
+    for (let j = h.line; j < Math.min(lines.length, h.line + 60); j++) {
+      if (j > h.line && /^\d{4}-\d\d-\d\d /.test(lines[j])) break;
+      const m = /addons\/((?:plugin|script|service|skin|context|metadata|resource|repository|weather|screensaver)\.[\w.-]+)\//.exec(lines[j]);
+      if (m) inTrace.push(m[1]);
+    }
+    const id = inTrace.find(x => !x.startsWith('script.module.')) || inTrace[0];
+    if (id) ids.add(id);
+  }
+  return { ev, ids };
+}
+
 // Kodi's view modes (defaultvideosettings/viewmode)
 const VIEWMODES = ['Normal', 'Zoom', 'Stretch 4:3', 'Wide zoom', 'Stretch 16:9', 'Original size', 'Custom', 'Stretch 16:9 (non-linear)', 'Zoom 120% width', 'Zoom 110% width'];
 
@@ -90,23 +110,8 @@ const RULES = [
   { cat: 'addons', check: d => d.kodi && d.kodi.repoErrors.size && { sev: 'warn', text: T('Outdated or broken repositories: {0}.', [...d.kodi.repoErrors].join(', ')),
     hint: T('Kodi could not update from these repositories. Remove repositories that are no longer maintained.'), ev: find(d, 'Kodi Log', kodiErr(/Repository add-on \S+ /)) } },
   { cat: 'addons', check: d => {
-    // Kodi logs a Python error as "EXCEPTION Thrown …" followed by the traceback; the add-on is named by a file path in it
-    let ev = find(d, KODI, /EXCEPTION Thrown/);
-    if (!ev.count) ev = find(d, KODI, /Traceback \(most recent call last\)/);
+    const { ev, ids } = pythonErrors(d);
     if (!ev.count) return;
-    // the culprit is the first add-on in the traceback that is not a shared module (script.module.urllib3 …);
-    // the traceback ends at the next timestamped line
-    const ids = new Set();
-    for (const h of ev.hits) {
-      const lines = d.log.byName[h.sec].lines, inTrace = [];
-      for (let j = h.line; j < Math.min(lines.length, h.line + 60); j++) {
-        if (j > h.line && /^\d{4}-\d\d-\d\d /.test(lines[j])) break;
-        const m = /addons\/((?:plugin|script|service|skin|context|metadata|resource|repository|weather|screensaver)\.[\w.-]+)\//.exec(lines[j]);
-        if (m) inTrace.push(m[1]);
-      }
-      const id = inTrace.find(x => !x.startsWith('script.module.')) || inTrace[0];
-      if (id) ids.add(id);
-    }
     return { sev: 'warn', text: ids.size ? T('Python errors in add-ons ({0}×): {1}.', ev.count, [...ids].join(', ')) : T('Python errors in add-ons ({0}×).', ev.count),
       hint: T('Update the add-on or ask its author for help. Errors in third-party add-ons are not OSMC problems.'), ev };
   } },
@@ -124,9 +129,30 @@ const RULES = [
     text: 'Kodi could not use NFS shares ({0}×).',
     hint: 'Check that the server is running, that the export path is right and that the export allows the IP address of this device.' }),
   simple({ cat: 'shares', sev: 'warn', in: 'system',
-    match: /mount error\(\d+\)|failed to parse mount options|CIFS:? VFS: .*(?:error|fail)|Failed to mount|mount\.(?:nfs4?|cifs): |nfs: server \S+ not responding|autofs.*(?:error|fail)/i,
+    match: /mount error\(\d+\)|failed to parse mount options|CIFS:? VFS: .*(?:error|fail)|Failed to mount|mount\.(?:nfs4?|cifs): |autofs.*(?:error|fail)/i,
     text: 'Errors when mounting file systems ({0}×).',
     hint: 'Check the mounts in fstab and autofs (see Sources & storage), and that the server is on before this device starts.' }),
+  { cat: 'shares', check: d => {
+    // a mounted NFS share whose server stopped answering: "nfs: server nas.lan not responding, still trying" (the device
+    // waits) or "…, timed out" (it gave up); "nfs: server nas.lan OK" when it answers again
+    const ev = find(d, sysSec(d), /nfs: server \S+ not responding/);
+    if (!ev.count) return;
+    const servers = [...new Set(ev.hits.map(h => (/nfs: server (\S+) not responding/.exec(h.text) || [])[1]))];
+    return { sev: 'warn', text: T('The NFS server {0} stopped responding ({1}×).', servers.join(', '), ev.count), ev,
+      hint: T('Playback and the library hang while the server doesn’t answer. Check that the server doesn’t go to sleep or lose its network connection, and that the mount (fstab or autofs) uses the server’s IP address.') };
+  } },
+  { cat: 'shares', check: d => {
+    // folders Kodi could not read while scanning or cleaning the library: "GetDirectory - Error getting /mnt/Videos/…".
+    // Usually the drive or the share behind a mount was not there at that moment. Only mounted drives (/mnt, /media):
+    // add-ons look for their own folders in /home/osmc before they exist, and disc images and plugin paths are left out.
+    const ev = find(d, KODI, / error <general>: GetDirectory - Error getting \/(?:mnt|media)\//);
+    if (!ev.count) return;
+    const paths = new Set(ev.hits.map(h => (/Error getting (\/.*?)\/?$/.exec(h.text) || [])[1]));
+    // the mount points: the first two parts of each path (/mnt/Videos)
+    const roots = [...new Set([...paths].map(p => p.split('/').slice(0, 3).join('/')))];
+    return { sev: 'warn', text: T('Kodi could not read folders ({0}×) under: {1}.', ev.count, roots.join(', ')), ev,
+      hint: T('Usually the drive or network share was not there when Kodi scanned or cleaned the library, or the folders were moved or renamed. Check the mounts under Sources & storage; a mount that starts on first use (x-systemd.automount, autofs) or a NAS that is asleep can be too late.') };
+  } },
 
   // --- network ---
   // (errors on SMB and NFS shares are the network shares rules above)
@@ -134,11 +160,26 @@ const RULES = [
     match: /Software caused connection abort|Connection reset by peer|Connection timed out|Operation timed out|Network is unreachable|No route to host/i,
     text: 'Network connection errors in the Kodi log ({0}×).',
     hint: 'The connection to a server was lost, often during playback. Check cables, the Wi-Fi signal and the server. A wired connection is more reliable.' }),
-  // (counted once per log entry: a Python traceback repeats the same DNS error on several lines)
-  simple({ cat: 'network', sev: 'warn', in: ['kodi', 'system'], perEntry: true,
-    match: /Could(?:n't| not) resolve|Failed to resolve|Unable to lookup host|Name or service not known|Temporary failure in name resolution/i,
-    text: 'Name lookup (DNS) errors ({0}×).',
-    hint: 'Server names or internet addresses could not be looked up. Check the DNS server in the network settings, or use IP addresses for shares.' }),
+  { cat: 'network', check: d => {
+    // (counted once per log entry: a Python traceback repeats the same DNS error on several lines)
+    const ev = find(d, [...KODI, sysSec(d)], /Could(?:n't| not) resolve|Failed to resolve|Unable to lookup host|Name or service not known|Temporary failure in name resolution/i, 50, true);
+    if (!ev.count) return;
+    // the names that could not be looked up, where the entry (the line and its indented continuation lines) says:
+    // lookup host: 'MAIN', host='www.x.net', <http://www.x.com/…>
+    const entry = h => [h.text, ...d.log.byName[h.sec].lines.slice(h.line + 1, h.line + 8).filter(l => /^\s/.test(l))].join(' ');
+    const hosts = new Set();
+    for (const h of ev.hits) {
+      const t = entry(h), m =/lookup host: '([^']+)'|host='([^']+)'|<(?:https?|ftp):\/\/([^/:>]+)|resolve(?: host)?[: ]+'?([\w-]+(?:\.[\w-]+)+)/i.exec(t);
+      const name = m && (m[1] || m[2] || m[3] || m[4]);
+      if (name) hosts.add(name);
+    }
+    // a name without a dot (a computer name such as "MAIN") is usually looked up on the local network, which often fails
+    const bare = [...hosts].some(n => !n.includes('.') && !/^\d/.test(n));
+    return { sev: 'warn', ev,
+      text: hosts.size ? T('Name lookup (DNS) errors ({0}×) for: {1}.', ev.count, [...hosts].slice(0, 6).join(', ')) : T('Name lookup (DNS) errors ({0}×).', ev.count),
+      hint: (bare ? T('A computer name without a dot can often not be looked up: use the server’s IP address in the source or mount instead.') + ' ' : '')
+        + T('Server names or internet addresses could not be looked up. Check the DNS server in the network settings, or use IP addresses for shares.') };
+  } },
   { cat: 'network', check: d => {
     // TV (PVR) add-ons that can't log in to or reach their backend, e.g. "AddOnLog: pvr.hts: Command authenticate failed: Access denied"
     const ev = find(d, KODI, kodiErr(/AddOnLog: pvr\.[\w.]+: .*(?:authenticat\w* failed|Access denied|Login failed|unable to connect|connection refused|failed to connect)/i));
@@ -158,13 +199,58 @@ const RULES = [
     text: T('Network errors on {0}: RX {1}, TX {2}.', i.name, i.rxErr, i.txErr), hint: T('Errors on a network interface often mean a bad cable, port or Wi-Fi signal.') })) },
 
   // --- crashes & errors ---
-  simple({ cat: 'crashes', sev: 'bad', in: 'system', match: /segfault at|status=(?:11\/SEGV|7\/BUS|6\/ABRT)|SIGSEGV|SIGBUS|core dumped|code=dumped/i,
+  { cat: 'crashes', check: d => {
+    // Kodi crashes: OSMC's start script restarts Kodi and logs how it ended, e.g.
+    //   mediacenter[2786]: /usr/bin/mediacenter: line 221:  2966 Segmentation fault      sudo -u osmc … kodi.bin …
+    //   mediacenter[2786]: Kodi exited with return code 139 after 0 hours, 10 minutes and 16 seconds
+    // A return code above 128 means Kodi was stopped by a signal (128 + the signal's number).
+    const sec = sysSec(d), ev = find(d, sec, /mediacenter\[\d+\]: Kodi exited with return code (?:129|13\d|14\d)\b/);
+    if (!ev.count) return;
+    const SIGNALS = { 134: 'abort', 135: 'bus error', 136: 'arithmetic error', 137: 'killed', 139: 'segmentation fault' };
+    const crashes = ev.hits.map(h => {
+      const m = /return code (\d+) after (\d+) hours?, (\d+) minutes? and (\d+) seconds?/.exec(h.text) || [];
+      return { h, why: T(SIGNALS[m[1]] || 'signal {0}', (m[1] || 0) - 128), after: m[2] != null ? fmtDuration(m[2] * 3600 + m[3] * 60 + +m[4]) : '?' };
+    });
+    // The previous Kodi log belongs to the crashed session when it ends at the time of the last crash. The Kodi log can
+    // be in another time zone than the journal (a whole number of hours), so the times are compared within the hour.
+    const old = d.oldKodi && d.oldKodi.last, last = crashes[crashes.length - 1].h.text;
+    const sod = (h, m, s) => +h * 3600 + +m * 60 + +s;
+    const tj = /^\w{3} +\d+ (\d\d):(\d\d):(\d\d(?:\.\d+)?)/.exec(last), tk = old && /^(\d\d):(\d\d):(\d\d(?:\.\d+)?)/.exec(old.time);
+    const gap = tj && tk ? (((sod(tj[1], tj[2], tj[3]) - sod(tk[1], tk[2], tk[3])) % 3600) + 3600) % 3600 : -1;
+    const lastSession = gap >= 0 && gap <= 60;
+    // playing at the crash: the session's last playback, if it never closed
+    const lastPb = lastSession && d.oldKodi.playbacks[d.oldKodi.playbacks.length - 1], playing = lastPb && !lastPb.end && lastPb;
+    const hits = ev.hits.slice();
+    if (lastSession) { const s = d.log.byName['Kodi Old Log']; hits.push({ sec: 'Kodi Old Log', line: old.line, n: s.startLine + old.line, text: s.lines[old.line] }); }
+    return { sev: 'bad', text: T('Kodi crashed and was restarted ({0}×): {1}.', crashes.length, crashes.map(c => T('{0} after {1}', c.why, c.after)).join('; '))
+        + (playing ? ' ' + T('The last crash was during playback of “{0}”.', pbPath(playing).split('/').pop()) : ''),
+      hint: (lastSession ? T('The previous Kodi log ends at the last crash, so its last lines show what Kodi was doing.') + ' '
+          : T('The Kodi log of the crashed session is no longer in this log (grab-logs only keeps the last two Kodi logs).') + ' ')
+        + T('A crash during playback often points to the file or the add-on that played it, a crash at start-up to an add-on or the skin. If it happens again, ask on the OSMC forum with a new log made straight after it.'),
+      ev: { hits, count: hits.length } };
+  } },
+  simple({ cat: 'crashes', sev: 'bad', in: 'system', not: /mediacenter\[\d+\]:/, match: /segfault at|status=(?:11\/SEGV|7\/BUS|6\/ABRT)|SIGSEGV|SIGBUS|core dumped|code=dumped/i,
     text: 'Signs of a program crash ({0}×).',
     hint: 'If it is Kodi (kodi.bin), a recently installed add-on or skin is a common cause. Crashes during updates can point to a weak power supply or a failing SD card.' }),
+  // the kernel itself crashed: at the next start-up systemd-pstore saves the crash report the kernel kept in memory
+  // ("dmesg-ramoops"; "console-ramoops" is saved at every start-up and is not a crash)
+  simple({ cat: 'crashes', sev: 'bad', in: 'system', match: /systemd-pstore\[\d+\]: PStore dmesg-ramoops-\d+ moved/,
+    text: 'The kernel crashed before a restart and saved a crash report ({0}×).',
+    hint: 'The device restarted by itself after a kernel crash. The report is not part of this log: show it with sudo cat /var/lib/systemd/pstore/dmesg-ramoops-0 and post it on the OSMC forum with this log, saying what was playing.' }),
+  // a kernel error the system survived (an "oops")
+  simple({ cat: 'crashes', sev: 'bad', in: 'system', perEntry: true,
+    match: /Internal error: Oops|Kernel panic - not syncing|Unable to handle kernel (?:paging request|NULL pointer)/,
+    text: 'The kernel reported an internal error ({0}×).',
+    hint: 'A kernel error is a fault in a driver or the kernel, often around a piece of hardware or a video or audio format. Ask on the OSMC forum with this log and say what the device was doing.' }),
   { cat: 'crashes', check: d => [[d.kodi, 'Kodi Log', 'The Kodi log has {0} repeats of the error: “{1}”.'],
     [d.oldKodi, 'Kodi Old Log', 'The previous Kodi log has {0} repeats of the error: “{1}”.']].map(([k, sec, text]) => {
-    // the most repeated error in each Kodi log (the counts include "Skipped N duplicate messages")
-    const top = k && [...k.groups.values()].filter(g => g.level === 'error' && !harmlessWhy(g.msg)).sort((a, b) => b.count - a.count)[0];
+    // the most repeated error in each Kodi log (the counts include "Skipped N duplicate messages"), unless another
+    // finding already covers it: TV add-ons that can't reach their backend, shares, name lookups, and errors that an
+    // add-on with Python errors logs itself ("[plugin.video.youtube] …")
+    const py = pythonErrors(d).ids;
+    const covered = msg => /^AddOnLog: pvr\.|SMB|NFS|nfs:\/\/|resolve host|lookup host|name resolution/i.test(msg)
+      || [...py].some(id => msg.startsWith(`[${id}]`) || msg.startsWith(`AddOnLog: ${id}:`));
+    const top = k && [...k.groups.values()].filter(g => g.level === 'error' && !harmlessWhy(g.msg) && !covered(g.msg)).sort((a, b) => b.count - a.count)[0];
     if (!top || top.count < 50) return null;
     const s = d.log.byName[sec];
     return { sev: 'warn', text: T(text, top.count, top.msg.slice(0, 160)),
@@ -173,8 +259,16 @@ const RULES = [
   }) },
 
   // --- storage & memory ---
-  { cat: 'storage', check: d => d.df.filter(df => df.pct >= 85 && !/^(tmpfs|devtmpfs)$/.test(df.fs)).map(df => ({ sev: df.pct >= 95 ? 'bad' : 'warn',
-    text: T('{0} is {1}% full ({2} free).', df.mnt, df.pct, df.avail), hint: df.mnt === '/' ? T('A full system disk can stop updates and stop Kodi from saving its library and thumbnails.') : '' })) },
+  { cat: 'storage', check: d => d.df.filter(df => !/^(tmpfs|devtmpfs)$/.test(df.fs)).map(df => {
+    // The system disk (and /boot) by how full it is. A media disk is only a problem when it has almost no space left:
+    // 96 % full with 64 GB free is normal for a disk of films. Small partitions (the Vero's /tee, a Pi's SETTINGS and
+    // RECOVERY …) are system partitions that are meant to be nearly full. df -h gives "64G", "5.2G", "512M" …
+    const gb = v => parseFloat(v) * ({ K: 1e-6, M: 1e-3, G: 1, T: 1e3, P: 1e6 }[(/[KMGTP]/i.exec(v) || ['G'])[0].toUpperCase()]);
+    const free = gb(df.avail), system = df.mnt === '/' || df.mnt === '/boot';
+    const sev = system ? (df.pct >= 95 ? 'bad' : df.pct >= 85 ? 'warn' : '') : gb(df.size) < 8 ? '' : free < 0.5 ? 'bad' : free < 2 ? 'warn' : '';
+    return sev && { sev, text: T('{0} is {1}% full ({2} free).', df.mnt, df.pct, df.avail),
+      hint: system ? T('A full system disk can stop updates and stop Kodi from saving its library and thumbnails.') : T('New recordings and downloads to this disk will fail when it is full.') };
+  }) },
   { cat: 'storage', check: d => d.mem.Mem && d.mem.Mem.avail / d.mem.Mem.total < 0.1 && { sev: 'warn', text: T('Low available memory: {0} MB of {1} MB.', d.mem.Mem.avail, d.mem.Mem.total) } },
   simple({ cat: 'storage', sev: 'bad', in: 'system', match: /Out of memory: Killed process|Memory cgroup out of memory/i,
     text: 'The system ran out of memory and stopped a program ({0}×).',
@@ -256,10 +350,14 @@ const RULES = [
   { cat: 'hardware', check: d => {
     // CEC (TV remote and power on/off over HDMI): libCEC can't open the adapter, or its messages go unanswered.
     // Adapter failures only count in the current Kodi log: a one-off in the previous session is usually gone after a restart.
+    // A failure at start-up that the connection gets over later ("connection to the CEC adapter opened", logged with
+    // debug logging) is not counted.
     const open = find(d, 'Kodi Log', /could not open(?:ing)? a connection to the CEC adapter|failed to find a free logical address/i);
+    const lastFail = open.count && open.hits[open.hits.length - 1].line;
+    const recovered = open.count && d.log.byName['Kodi Log'].lines.slice(lastFail).some(l => /connection to the CEC adapter opened/.test(l));
     const notSent = find(d, KODI, /CecLogMessage - .*\bnot sent\b/);
     return [
-      open.count && { sev: 'warn', text: T('Kodi could not connect to the CEC adapter ({0}×).', open.count), ev: open,
+      open.count && !recovered && { sev: 'warn', text: T('Kodi could not connect to the CEC adapter ({0}×).', open.count), ev: open,
         hint: T('CEC lets the TV remote control Kodi and turns the devices on and off. Check that CEC is on in the TV and in any soundbar or receiver (Anynet+, SimpLink, Bravia Sync …). Unplugging the TV and the other HDMI devices from power for a minute often resets it.') },
       notSent.count >= 50 && { sev: 'warn', text: T('Many CEC messages could not be sent ({0}×).', notSent.count), ev: notSent,
         hint: T('The TV or another HDMI device does not answer CEC. Check the CEC settings on the TV and on any soundbar or receiver in between, and try another HDMI input.') },
@@ -293,8 +391,11 @@ const RULES = [
       // 3D modes use half the height or width (720x480 → 720x240, 1920x2160 → pixel ratio 0.5), so the
       // pixel ratio is only checked for 16:9 modes
       const w = +wh[1], h = +wh[2];
-      const full = [`${w}x${h}`, `${w}x${h / 2}`, `${w / 2}x${h}`, '1280x720', '1920x1080', '3840x2160'];
-      const shifted = num('left') || num('top') || (g('right') && g('bottom') && !full.includes(`${num('right')}x${num('bottom')}`));
+      // (a shift of a pixel or two can't be seen, so it isn't counted)
+      const full = [[w, h], [w, h / 2], [w / 2, h], [1280, 720], [1920, 1080], [3840, 2160]];
+      const near = (a, b) => Math.abs(a - b) <= 2;
+      const shifted = !near(num('left') || 0, 0) || !near(num('top') || 0, 0)
+        || (g('right') && g('bottom') && !full.some(([fw, fh]) => near(num('right'), fw) && near(num('bottom'), fh)));
       const wide = w >= 1280 && Math.abs(w / h - 16 / 9) < 0.02;
       if (shifted || (wide && g('pixelratio') && Math.abs(num('pixelratio') - 1) > 0.001)) custom.push(desc);
     }
@@ -340,10 +441,13 @@ const RULES = [
         : T('Forced display settings can stop Kodi from using the display modes of the TV.'), ev };
   } },
   { cat: 'display', check: d => {
-    // refresh rate switching on, no pause for it, and the log shows the display actually switching during a playback
+    // refresh rate switching on and no pause for it, and a playback that switched the display started badly: the
+    // display took more than 2 s to come back, the first picture took more than 5 s, or many frames were late.
+    // (Many TVs switch fine without a pause, so the setting alone is not a problem.)
     const g = id => (d.gui.find(s => s.id === id) || {}).value;
     if (!+g('videoplayer.adjustrefreshrate') || g('videoscreen.delayrefreshchange') == null || +g('videoscreen.delayrefreshchange')) return;
-    if (!d.kodi || !d.kodi.playbacks.some(p => p.st.lost != null || p.st.hdmi)) return;
+    const bad = p => { const st = p.st; return (st.lost != null || st.hdmi) && ((st.reset - st.lost > 2000) || (st.av - p.t0 > 5000) || st.late > 10); };
+    if (!d.kodi || !d.kodi.playbacks.some(bad)) return;
     return { sev: 'info', text: T('The display switches refresh rate when playback starts, but “Pause during refresh rate change” is off.'),
       hint: T('If the picture is black or stutters for the first seconds, set Settings → System → Display → Pause during refresh rate change to 2–4 seconds, so the TV has time to lock on to the new mode.'),
       ev: find(d, 'guisettings.xml', /"videoscreen\.delayrefreshchange"/) };
@@ -361,10 +465,14 @@ const RULES = [
     const ab = Object.fromEntries(d.abridged.map(s => [s.name, s.value]));
     const capTxt = d.audioCap.map(r => r[0]).join(' ');
     const hasAC3 = /AC-?3/i.test(capTxt), hasDDP = /Digital\+|E-?AC-?3|ATMOS/i.test(capTxt), hasMAT = /MAT|TrueHD/i.test(capTxt), hasDTS = /DTS/i.test(capTxt);
+    // An AV receiver or soundbar connected directly (from the EDID: "DENON-AVR", "marantz-AVR", or a maker of
+    // receivers). A TV reports the formats too, but with its own speakers passthrough off and 2 channels are fine.
+    const rx = /AVR|receiver|soundbar|sonos|\bbose\b/i.test(d.edid['Rx Product Name'] || '') || /^(DON|MJI|YMH|ONK|PIO|HKA|NAD|ARC|ANT|INT)$/.test(d.edid['Rx Manufacturer Name'] || '');
     const out = [];
     if (ab['Allow passthrough'] === 'false' && (hasAC3 || hasDDP || hasMAT || hasDTS))
-      out.push({ sev: 'warn', text: T('Passthrough is disabled, but the connected device reports support for: {0}.', d.audioCap.map(r => r[0]).filter(f => !/^(PCM|OneBitAudio)/i.test(f)).join(', ')),
-        hint: T('Turn on passthrough under Settings → System → Audio to send Dolby and DTS to the receiver unchanged.') });
+      out.push({ sev: rx ? 'warn' : 'info', text: T('Passthrough is disabled, but the connected device reports support for: {0}.', d.audioCap.map(r => r[0]).filter(f => !/^(PCM|OneBitAudio)/i.test(f)).join(', ')),
+        hint: rx ? T('Turn on passthrough under Settings → System → Audio to send Dolby and DTS to the receiver unchanged.')
+          : T('With the TV’s own speakers this is fine. If the sound goes on to a soundbar or receiver (also through the TV’s ARC or eARC), turn on passthrough under Settings → System → Audio to send Dolby and DTS to it unchanged.') });
     if (ab['Allow passthrough'] === 'true') {
       const miss = [];
       if (hasDDP && ab['Dolby Digital Plus (E-AC3) capable receiver'] === 'false') miss.push('Dolby Digital Plus (E-AC3)');
@@ -373,8 +481,9 @@ const RULES = [
       if (miss.length) out.push({ sev: 'info', text: T('Passthrough is enabled, but these formats reported by the device are not enabled in Kodi: {0}.', miss.join(', ')) });
     }
     const maxCh = Math.max(0, ...d.audioCap.map(r => parseInt(r[1]) || 0));
-    if (ab['Number of channels'] && parseFloat(ab['Number of channels']) <= 2 && maxCh > 2)
-      out.push({ sev: 'info', text: T('Number of channels is set to {0}, but the device reports up to {1} channels.', ab['Number of channels'], maxCh) });
+    if (rx && ab['Number of channels'] && parseFloat(ab['Number of channels']) <= 2 && maxCh > 2)
+      out.push({ sev: 'info', text: T('Number of channels is set to {0}, but the device reports up to {1} channels.', ab['Number of channels'], maxCh),
+        hint: T('Multichannel sound that is not passed through (for example TrueHD that is decoded, or 5.1 FLAC) is then mixed down to stereo. Set the number of channels to match the speakers under Settings → System → Audio.') });
     return out;
   } },
 
@@ -484,6 +593,16 @@ const RULES = [
     return out;
   } },
 
+  { cat: 'settings', check: d => {
+    // OSMC copies Kodi's time zone (Settings → Interface → Regional) to the system each time Kodi starts. With an invalid
+    // one (the default "etc/localtime") the copy fails, and the Kodi log and the system journal then use different times.
+    const ev = find(d, sysSec(d), /mediacenter\[\d+\]: \/bin\/cp: cannot stat '\/usr\/share\/zoneinfo\//);
+    if (!ev.count) return;
+    const tz = (d.gui.find(s => s.id === 'locale.timezone') || {}).value;
+    return { sev: 'info', text: T('The time zone could not be set from Kodi’s setting “{0}”.', tz || '?'), ev,
+      hint: T('Choose the time zone under Settings → Interface → Regional → Timezone. Until then the times in the Kodi log can differ from the system journal’s by whole hours.') };
+  } },
+
   // --- about the log ---
   { cat: 'log', check: d => d.kodi && (d.kodi.debugLogging
     ? { sev: 'ok', text: T('Debug logging is enabled, so the Kodi log has full detail.') }
@@ -555,6 +674,11 @@ const HARMLESS = [
   [/Update3dResolutions: No valid 3D resolutions found/, 'The TV has no 3D modes.'],
   [/GetDirectory - Error getting udf:\/\/.*\/BDMV\/META\//, 'The disc image has no menu metadata; playback is not affected.'],
   [/is deprecated and might be removed in future Kodi versions/, 'A note for the add-on’s author; it does not affect playback.'],
+  // skins and their helper add-ons asking for controls or windows the current skin doesn't have
+  [/EXCEPTION: Non-Existent Control \d+|Control -?\d+ in window \d+ has been asked to focus, but it can't|Window Translator: Can't find window/,
+    'The skin or an add-on refers to a control or window the skin doesn’t have; nothing visible goes wrong.'],
+  [/EXCEPTION: Kodi is not playing any media file/, 'An add-on asked about the playing file while nothing was playing; not a problem.'],
+  [/GetDirectory - Error getting \/home\/osmc\/\.kodi\/userdata\/(?:\.hts|auto\.master\.d)\//, 'An OSMC settings folder that doesn’t exist until it is used; not a problem.'],
   // system journal and kernel (Vero): drivers probing hardware the Vero doesn't have or use, at every start
   [/tee_client_open_session failed|meson-mmc: (?:sdio: resp_timeout|get temperature failed)|could not get clock \/(?:cvbsout|amhdmitx):|cvbsout_clktree_probe|aml_iomap: (?:read|write) cbus reg/, EVERY_START],
   [/Failed to add I2SIn CLK|failed add snd tdm controls|aml_tdm_get_pins error|failed to get vad wakeup sample rate|Failed to add audio effects v1 controls/, EVERY_START],

@@ -343,8 +343,10 @@ function parseEdid(t) {
 // (the first line is a column header and is skipped).
 // Only format lines ("AC-3, 6 ch, …") are kept: some devices add a "Reserved" line and an indented
 // "Dolby Vendor Specific" block (Ver:1.0, center_speaker:1 …) that are not formats.
+// The Vero's driver spells Dolby "Dobly" ("Dobly_Digital+/ATMOS"); that is corrected here.
 function parseAudioCap(t) {
-  return t.split('\n').slice(1).filter(l => /^[^\s,][^,]*, \d+ ch\b/.test(l) && !/^Reserved\b/.test(l)).map(l => l.split(',').map(s => s.trim()));
+  return t.split('\n').slice(1).filter(l => /^[^\s,][^,]*, \d+ ch\b/.test(l) && !/^Reserved\b/.test(l))
+    .map(l => l.replace(/^Dobly_Digital\+/, 'Dolby Digital+').split(',').map(s => s.trim()));
 }
 
 // "Kodi Log" / "Kodi Old Log": lines like

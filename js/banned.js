@@ -29,8 +29,10 @@ function parseBanned(json, fetched, source) {
     if (!name) continue;
     const e = { section: sec, name };
     count++;
-    const idm = /<!--\s*ID:\s*(.*?)\s*(?:-->|\?>|$)/.exec(l);
-    if (idm) for (const id of idm[1].split('|')) { const k = id.trim().toLowerCase(); if (k) ids.set(k, e); }
+    // the comment usually starts with "ID:", but some entries have the IDs alone ("<!-- script.module.cocoscrapers -->"),
+    // so anything in the comment that looks like an add-on ID counts
+    const idm = /<!--\s*(?:ID:\s*)?(.*?)\s*(?:-->|\?>|$)/.exec(l);
+    if (idm) for (const id of idm[1].split('|')) { const k = id.trim().toLowerCase(); if (/^[\w-]+(?:\.[\w-]+)+$/.test(k)) ids.set(k, e); }
     // forks and wizards are not add-on names, so they are not used for name matching
     const n = normName(name);
     if (n.length >= 3 && !/fork|wizard/i.test(sec)) names.set(n, e);
