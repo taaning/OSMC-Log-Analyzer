@@ -209,22 +209,39 @@ const RULES = [
     const SIGNALS = { 134: 'abort', 135: 'bus error', 136: 'arithmetic error', 137: 'killed', 139: 'segmentation fault' };
     const crashes = ev.hits.map(h => {
       const m = /return code (\d+) after (\d+) hours?, (\d+) minutes? and (\d+) seconds?/.exec(h.text) || [];
-      return { h, why: T(SIGNALS[m[1]] || 'signal {0}', (m[1] || 0) - 128), after: m[2] != null ? fmtDuration(m[2] * 3600 + m[3] * 60 + +m[4]) : '?' };
+      return { h, why: T(SIGNALS[m[1]] || 'signal {0}', (m[1] || 0) - 128), run: m[2] != null ? m[2] * 3600 + m[3] * 60 + +m[4] : null,
+        after: m[2] != null ? fmtDuration(m[2] * 3600 + m[3] * 60 + +m[4]) : '?' };
     });
-    // The previous Kodi log belongs to the crashed session when it ends at the time of the last crash. The Kodi log can
-    // be in another time zone than the journal (a whole number of hours), so the times are compared within the hour.
-    const old = d.oldKodi && d.oldKodi.last, last = crashes[crashes.length - 1].h.text;
-    const sod = (h, m, s) => +h * 3600 + +m * 60 + +s;
-    const tj = /^\w{3} +\d+ (\d\d):(\d\d):(\d\d(?:\.\d+)?)/.exec(last), tk = old && /^(\d\d):(\d\d):(\d\d(?:\.\d+)?)/.exec(old.time);
-    const gap = tj && tk ? (((sod(tj[1], tj[2], tj[3]) - sod(tk[1], tk[2], tk[3])) % 3600) + 3600) % 3600 : -1;
-    const lastSession = gap >= 0 && gap <= 60;
+    // The previous Kodi log is the crashed session when it started the run time before the crash ("after 186 hours …"),
+    // or else when it ends at the crash. A quiet Kodi (no debug logging) can write nothing for minutes before it
+    // crashes, so the start is the surer match. The Kodi log can be in another time zone than the journal, so the
+    // times may differ by whole hours (up to 14).
+    const lastCrash = crashes[crashes.length - 1], old = d.oldKodi;
+    const ms = e => Date.parse(`${e.date}T${e.time}`);
+    const tj = /^(\w{3}) +(\d+) (\d\d:\d\d:\d\d(?:\.\d+)?)/.exec(lastCrash.h.text);
+    let crashAt = NaN;
+    if (tj && old) {
+      // the journal has no year: take the Kodi log's, or the next one when the crash is in an earlier month (new year)
+      const y = +old.first.date.slice(0, 4), at = yr => Date.parse(`${tj[1]} ${tj[2]} ${yr} ${tj[3].slice(0, 8)}`);
+      crashAt = at(y) < ms(old.first) - 86400e3 ? at(y + 1) : at(y);
+    }
+    const zone = diff => { const h = Math.round(diff / 3600e3); return Math.abs(h) <= 14 ? diff - h * 3600e3 : Infinity; };   // what is left after whole hours
+    // (not a session that closed normally, and one that started before the crash: Kodi starts again right after one)
+    const clean = find(d, 'Kodi Old Log', /<general>: Exiting the application/).count > 0;
+    const startedBefore = old && zone(crashAt - ms(old.first)) >= -5e3 && crashAt - ms(old.first) > -14 * 3600e3;
+    const byStart = old && lastCrash.run != null && Math.abs(zone(crashAt - (ms(old.first) + lastCrash.run * 1000))) <= 120e3;
+    const byEnd = old && zone(crashAt - ms(old.last)) >= 0 && zone(crashAt - ms(old.last)) <= 60e3;
+    const lastSession = !clean && startedBefore && (byStart || byEnd);
+    // how long before the crash Kodi wrote its last line
+    const quiet = lastSession ? zone(crashAt - ms(old.last)) / 1000 : 0;
     // playing at the crash: the session's last playback, if it never closed
-    const lastPb = lastSession && d.oldKodi.playbacks[d.oldKodi.playbacks.length - 1], playing = lastPb && !lastPb.end && lastPb;
+    const lastPb = lastSession && old.playbacks[old.playbacks.length - 1], playing = lastPb && !lastPb.end && lastPb;
     const hits = ev.hits.slice();
-    if (lastSession) { const s = d.log.byName['Kodi Old Log']; hits.push({ sec: 'Kodi Old Log', line: old.line, n: s.startLine + old.line, text: s.lines[old.line] }); }
+    if (lastSession) { const s = d.log.byName['Kodi Old Log']; hits.push({ sec: 'Kodi Old Log', line: old.last.line, n: s.startLine + old.last.line, text: s.lines[old.last.line] }); }
     return { sev: 'bad', text: T('Kodi crashed and was restarted ({0}×): {1}.', crashes.length, crashes.map(c => T('{0} after {1}', c.why, c.after)).join('; '))
         + (playing ? ' ' + T('The last crash was during playback of “{0}”.', pbPath(playing).split('/').pop()) : ''),
-      hint: (lastSession ? T('The previous Kodi log ends at the last crash, so its last lines show what Kodi was doing.') + ' '
+      hint: (lastSession ? T('The previous Kodi log is the session that crashed: its last lines show what Kodi did last.') + ' '
+          + (quiet > 60 ? T('Kodi wrote nothing in the last {0} before the crash, so it was probably idle; debug logging would show more.', fmtDuration(quiet)) + ' ' : '')
           : T('The Kodi log of the crashed session is no longer in this log (grab-logs only keeps the last two Kodi logs).') + ' ')
         + T('A crash during playback often points to the file or the add-on that played it, a crash at start-up to an add-on or the skin. If it happens again, ask on the OSMC forum with a new log made straight after it.'),
       ev: { hits, count: hits.length } };
