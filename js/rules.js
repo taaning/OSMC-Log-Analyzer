@@ -348,20 +348,58 @@ const RULES = [
       ev: { hits: [...usbStart.hits, ...kodiScan.hits].slice(0, 6), count: usbStart.count + kodiScan.count } };
   } },
   { cat: 'hardware', check: d => {
-    // CEC (TV remote and power on/off over HDMI): libCEC can't open the adapter, or its messages go unanswered.
-    // Adapter failures only count in the current Kodi log: a one-off in the previous session is usually gone after a restart.
-    // A failure at start-up that the connection gets over later ("connection to the CEC adapter opened", logged with
-    // debug logging) is not counted.
-    const open = find(d, 'Kodi Log', /could not open(?:ing)? a connection to the CEC adapter|failed to find a free logical address/i);
-    const lastFail = open.count && open.hits[open.hits.length - 1].line;
-    const recovered = open.count && d.log.byName['Kodi Log'].lines.slice(lastFail).some(l => /connection to the CEC adapter opened/.test(l));
+    // CEC (TV remote and power on/off over HDMI): libCEC can't open the adapter or get an address, or its messages go
+    // unanswered. Adapter failures only count in the current Kodi log: a one-off in the previous session is usually gone
+    // after a restart. A failure that the connection gets over later ("connection to the CEC adapter opened", logged
+    // with debug logging) is not counted, or only noted.
+    const s = d.log.byName['Kodi Log'];
+    const recovered = ev => ev.count && s.lines.slice(ev.hits[ev.hits.length - 1].line).some(l => /connection to the CEC adapter opened/.test(l));
+    const out = [];
+    // CEC has three addresses for players: Playback 1, 2 and 3 (4, 8, B). With more players one is left out
+    // ("logical address 'Playback 3' already taken" … "failed to find a free logical address for the client").
+    // (an address that is taken on its own is normal: Kodi then tries the next one)
+    const noAddr = find(d, 'Kodi Log', /failed to find a free logical address/);
+    if (noAddr.count) {
+      const taken = find(d, 'Kodi Log', /logical address '[^']+' already taken|failed to find a free logical address/);
+      // the other players, as libCEC names them: "Playback 1 (4): vendor = Sony (080046)". Only until Kodi gets an
+      // address itself ("using logical address …"): libCEC then gives Kodi's own address the TV's vendor.
+      const own = s.lines.findIndex(l => /CecLogMessage - using logical address/.test(l));
+      const players = new Map();
+      for (const l of own < 0 ? s.lines : s.lines.slice(0, own)) {
+        const m = /CecLogMessage - (Playback \d) \(\w\): vendor = ([^(]+?) \(/.exec(l);
+        if (m && !/Pulse Eight|Unknown/.test(m[2])) players.set(m[1], m[2]);
+      }
+      const vendors = [...players].map(([p, v]) => `${p}: ${v}`);
+      const later = recovered(noAddr);
+      out.push({ sev: later ? 'info' : 'warn', ev: taken,
+        text: (later ? T('At start-up all three CEC addresses for players were taken by other HDMI devices; Kodi only got one later.')
+          : T('Kodi could not join CEC: all three CEC addresses for players are taken by other HDMI devices.')).replace(/\.$/, vendors.length ? ` (${vendors.join(', ')}).` : '.'),
+        hint: T('CEC has room for three players (game consoles, Blu-ray players, streaming boxes …). With more, one is left out, and two can end up with the same address. Turn off CEC on a device that doesn’t need the TV remote, for example “Enable HDMI Device Link” on a PlayStation or HDMI-CEC on a streaming box.') });
+    }
+    const open = find(d, 'Kodi Log', /could not open(?:ing)? a connection to the CEC adapter/i);
+    if (open.count && !noAddr.count && !recovered(open)) out.push({ sev: 'warn', text: T('Kodi could not connect to the CEC adapter ({0}×).', open.count), ev: open,
+      hint: T('CEC lets the TV remote control Kodi and turns the devices on and off. Check that CEC is on in the TV and in any soundbar or receiver (Anynet+, SimpLink, Bravia Sync …). Unplugging the TV and the other HDMI devices from power for a minute often resets it.') });
+    // messages nobody acknowledged: libCEC checks a device with a POLL ("<< Playback 1 (4) -> TV (0): POLL") and logs
+    // ">> POLL not sent" when it doesn't answer; the device a "not sent" belongs to is the last one polled
     const notSent = find(d, KODI, /CecLogMessage - .*\bnot sent\b/);
-    return [
-      open.count && !recovered && { sev: 'warn', text: T('Kodi could not connect to the CEC adapter ({0}×).', open.count), ev: open,
-        hint: T('CEC lets the TV remote control Kodi and turns the devices on and off. Check that CEC is on in the TV and in any soundbar or receiver (Anynet+, SimpLink, Bravia Sync …). Unplugging the TV and the other HDMI devices from power for a minute often resets it.') },
-      notSent.count >= 50 && { sev: 'warn', text: T('Many CEC messages could not be sent ({0}×).', notSent.count), ev: notSent,
-        hint: T('The TV or another HDMI device does not answer CEC. Check the CEC settings on the TV and on any soundbar or receiver in between, and try another HDMI input.') },
-    ];
+    if (notSent.count >= 50) {
+      const who = {};
+      for (const sec of KODI) {
+        let target = '';
+        for (const l of (d.log.byName[sec] || { lines: [] }).lines) {
+          const m = /CecLogMessage - << .+? -> (.+? \(\w\)): POLL/.exec(l);
+          if (m) target = m[1];
+          else if (/CecLogMessage - .*\bnot sent\b/.test(l) && target) who[target] = (who[target] || 0) + 1;
+        }
+      }
+      const main = Object.entries(who).sort((a, b) => b[1] - a[1])[0];
+      const tv = main && /^TV\b/.test(main[0]) && main[1] >= notSent.count / 2;
+      out.push({ sev: 'warn', ev: notSent,
+        text: main && main[1] >= notSent.count / 2 ? T('{0} did not answer CEC ({1}×).', main[0], notSent.count) : T('Many CEC messages could not be sent ({0}×).', notSent.count),
+        hint: tv ? T('Kodi keeps asking the TV and gets no answer, so the TV remote can’t control Kodi. Unplug the TV and the other HDMI devices from power for a minute and switch the TV on first. If a soundbar or receiver sits in between, try this device directly in the TV.')
+          : T('The TV or another HDMI device does not answer CEC. Check the CEC settings on the TV and on any soundbar or receiver in between, and try another HDMI input.') });
+    }
+    return out;
   } },
   { cat: 'hardware', check: d => {
     const ev = find(d, 'Pi config-user', /^\s*(?:arm_freq|over_voltage\w*|core_freq|gpu_freq|sdram_freq|h264_freq|v3d_freq|force_turbo)\s*=/i);
