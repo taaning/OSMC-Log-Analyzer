@@ -82,6 +82,8 @@
     <div id="panels"></div>
   </div>
 </main>
+<!-- Shown over the page while a log is read and analysed (main.js busy()) -->
+<div id="busy" hidden role="status" aria-live="polite"><div class="spinner"></div><p id="busy-text"></p></div>
 <!-- The scripts share their top-level names; main.js starts the page, so it comes last. -->
 <script src="js/core.js"></script>
 <script src="js/parsers.js"></script>

@@ -512,5 +512,7 @@
   "{0} did not answer CEC ({1}×).": "{0} svarede ikke på CEC ({1}×).",
   "Kodi keeps asking the TV and gets no answer, so the TV remote can’t control Kodi. Unplug the TV and the other HDMI devices from power for a minute and switch the TV on first. If a soundbar or receiver sits in between, try this device directly in the TV.": "Kodi spørger TV’et igen og igen uden at få svar, så TV-fjernbetjeningen kan ikke styre Kodi. Tag strømmen fra TV’et og de andre HDMI-enheder i et minut, og tænd TV’et først. Sidder der en soundbar eller receiver imellem, så prøv denne enhed direkte i TV’et.",
   "The previous Kodi log is the session that crashed: its last lines show what Kodi did last.": "Den forrige Kodi-log er den session, der gik ned: dens sidste linjer viser, hvad Kodi lavede til sidst.",
-  "Kodi wrote nothing in the last {0} before the crash, so it was probably idle; debug logging would show more.": "Kodi skrev intet i de sidste {0} før nedbruddet og var nok i ro; debug-logning ville vise mere."
+  "Kodi wrote nothing in the last {0} before the crash, so it was probably idle; debug logging would show more.": "Kodi skrev intet i de sidste {0} før nedbruddet og var nok i ro; debug-logning ville vise mere.",
+  "Reading {0} ({1})…": "Læser {0} ({1})…",
+  "Analysing the log ({0})…": "Analyserer loggen ({0})…"
 }

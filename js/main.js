@@ -62,19 +62,37 @@ showTheme();
 
 // ---------- loading ----------
 const drop = document.getElementById('drop'), fileIn = document.getElementById('file'), pasteIn = document.getElementById('paste');
+// "Reading …" / "Analysing …" over the page while a log loads (text), or hidden (no text). Reading and analysing run
+// without a break, so nextFrame() lets the browser draw the message first.
+const busyEl = document.getElementById('busy');
+function busy(text) {
+  busyEl.hidden = !text;
+  if (text) document.getElementById('busy-text').textContent = text;
+}
+const nextFrame = () => new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
 // Reads a log file (File object) and shows the result.
 async function load(file) {
-  const buf = await file.arrayBuffer();
-  loadText(new TextDecoder('utf-8').decode(buf), file.name, file.size);
+  busy(T('Reading {0} ({1})…', file.name, fmtBytes(file.size)));
+  try {
+    const buf = await file.arrayBuffer();
+    await loadText(new TextDecoder('utf-8').decode(buf), file.name, file.size);
+  } finally { busy(''); }
 }
 // Splits a log's text and shows the result (name and size are shown in the header). Waits for the language
 // file and the banned list so the first render is complete.
 async function loadText(text, name, size) {
+  busy(T('Analysing the log ({0})…', fmtBytes(size)));
+  await nextFrame();
+  try { await analyse(text, name, size); } finally { busy(''); }
+}
+async function analyse(text, name, size) {
   const log = parseLog(fixMojibake(text));
   await Promise.all([bannedReady, langReady]);
+  await nextFrame();
   if (!log.sections.length) {
     // a paste.osmc.tv link instead of the log: the site doesn't allow other pages to fetch from it
     const paste = /^\s*https?:\/\/paste\.osmc\.tv\/(?:raw\/)?(\w+)/.exec(text);
+    busy('');
     alert(paste ? T('The page can’t open paste.osmc.tv links itself. Open {0}, select all the text (Ctrl+A), copy it and paste it here.', `https://paste.osmc.tv/raw/${paste[1]}`)
       : T('Could not find any OSMC log sections in the file. Is it a log from grab-logs?'));
     return;
@@ -85,6 +103,7 @@ async function loadText(text, name, size) {
     window.scrollTo(0, 0);
   } catch (err) {
     console.error(err);
+    busy('');
     alert(T('Error during analysis: {0}', err.message));
     return;
   }

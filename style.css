@@ -43,6 +43,14 @@ main { max-width: 1280px; margin: 0 auto; padding: 16px; }
 #paste { display: block; width: 100%; margin-top: 12px; resize: none; font: 13px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace;
   padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); color: var(--text); }
 #paste:focus { outline: none; border-color: var(--accent); }
+/* busy indicator while a log is read and analysed */
+#busy { position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+  background: color-mix(in srgb, var(--bg) 80%, transparent); }
+#busy[hidden] { display: none; }
+#busy p { margin: 0; padding: 0 16px; text-align: center; font-weight: 600; }
+.spinner { width: 38px; height: 38px; border: 4px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.5s; } }
 /* small link to the source code under the start page */
 .repo { margin: 14px 0 0; text-align: center; font-size: 12.5px; }
 .repo a { color: var(--muted); }
